@@ -1,3 +1,4 @@
+import { safeA2AErrorMessage } from './a2a-error.js';
 import { safeToolValue } from './safe-tool-value.js';
 import { validateAgentItem } from './agent.js';
 import {
@@ -355,7 +356,9 @@ export class RuntimeConversationIngress {
         const error = record(frame.error);
         base.kind = 'error';
         base.payloadSchemaRef = 'conversation.item.error/v1';
-        base.payload = { error: String(error.message || error.code || 'Remote call failed') };
+        base.payload = { error: source.framework === 'a2a' || error.source === 'a2a'
+          ? safeA2AErrorMessage(error.code)
+          : String(error.message || error.code || 'Remote call failed') };
       } else {
         base.visibility = visibility === 'public' ? 'public' : 'hidden';
         base.kind = 'unknown';
