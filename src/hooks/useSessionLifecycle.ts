@@ -153,6 +153,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
   // drives reconnects; Responses/AG-UI/A2A internal event ids are ignored.
   const sessionEventCursorRef = useRef(createSessionEventCursor());
   const loadSessionGenerationRef = useRef(0);
+  const explicitDraftAgentRef = useRef<string | null>(null);
   // The readable fallback can paint before RuntimeEvent hydration finishes.
   // Search must wait for stable canonical message identities, independently
   // of the loading skeleton (which should disappear as soon as text is ready).
@@ -437,6 +438,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
       const profile = bootstrapPresentationProfile(capabilities.ConversationSurface, agentBlockRendererCatalog);
       historyProfileBySessionRef.current.set(sessionId, profile);
       const previousSessionId = currentSessionIdRef.current;
+      explicitDraftAgentRef.current = null;
       const generation = ++loadSessionGenerationRef.current;
       historyHydrationGenerationRef.current = generation;
       historyReadFailureRef.current = null;
@@ -705,7 +707,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
         // request. Do not let that older response restore a previous session
         // while CreateSession is still resolving: doing so starts a stale
         // history hydrate that can replace the just-rendered optimistic turn.
-        if (sessionCreationPromiseRef.current) {
+        if (sessionCreationPromiseRef.current || explicitDraftAgentRef.current === targetAgentId) {
           return;
         }
         const sorted = useSessionStore.getState().sessions;
@@ -774,6 +776,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
   }, [fetchSessions]);
 
   const adoptCreatedSession = useCallback((newId: string, preserveMessages = false) => {
+    explicitDraftAgentRef.current = null;
     loadSessionGenerationRef.current += 1;
     runSubscriptionAbortRef.current?.abort();
     pendingCreatedSessionAgentsRef.current.set(newId, agentIdRef.current);
@@ -797,6 +800,9 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
   }, [isMobile]);
 
   const startNewConversation = useCallback(() => {
+    // An explicit blank draft wins over automatic restoration, including a
+    // list request that started before the click and later background refreshes.
+    explicitDraftAgentRef.current = agentIdRef.current;
     loadSessionGenerationRef.current += 1;
     runSubscriptionAbortRef.current?.abort();
     // Navigation creates a local draft; it must not disconnect an execution
@@ -878,6 +884,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
         canonicalRunIdsBySessionRef.current.delete(sessionId);
         pendingCreatedSessionAgentsRef.current.delete(sessionId);
         if (currentSessionIdRef.current === sessionId) {
+          explicitDraftAgentRef.current = agentIdRef.current;
           loadSessionGenerationRef.current += 1;
           runSubscriptionAbortRef.current?.abort();
           disconnectRun?.();

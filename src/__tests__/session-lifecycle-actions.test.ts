@@ -75,6 +75,23 @@ describe('shared session lifecycle actions', () => {
     expect(useMessageStore.getState().messages.map(item => item.id)).toEqual(['old-message']);
   });
 
+  it('keeps an explicit draft when a restore-enabled list returns late or refreshes again', async () => {
+    let finish!: (value: unknown) => void;
+    const listSessionMessages = vi.fn();
+    const listSessions = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue({ Sessions: [{ SessionId: 'old' }], Total: 1 });
+    const actions = lifecycle({ listSessions, listSessionMessages }, true);
+    const pending = actions.fetchSessions('agent-a', 'old');
+    actions.startNewConversation();
+    finish({ Sessions: [{ SessionId: 'old' }], Total: 1 });
+    await pending;
+    await actions.fetchSessions('agent-a', 'old');
+    expect(listSessionMessages).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().currentSessionId).toBeNull();
+    expect(useMessageStore.getState().messages).toEqual([]);
+    expect(useSessionStore.getState().sessions).toHaveLength(1);
+  });
+
   it('keeps a deleted selected session on the blank draft instead of entering another history', async () => {
     const listSessionMessages = vi.fn();
     const actions = lifecycle({ deleteSession: vi.fn().mockResolvedValue({}), listSessionMessages,
