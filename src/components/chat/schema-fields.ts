@@ -20,6 +20,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  * (`{type:"object", properties, required}`).
  */
 export function schemaFields(schema: Record<string, unknown>): InteractionRequestSchemaField[] {
+  // Interaction submission is an object envelope. Runtime adapters unwrap
+  // `result` for a scalar request; object requests keep their original fields.
+  if (['string', 'number', 'boolean'].includes(String(schema.type))) {
+    return schemaFields({ type: 'object', properties: { result: schema }, required: ['result'] });
+  }
   const properties = asRecord(schema.properties) || {};
   const required = Array.isArray(schema.required)
     ? new Set(schema.required.map(String))

@@ -145,12 +145,21 @@ export function InteractionTray({
   localCatalog,
   className,
 }: InteractionTrayProps) {
-  const [comment, setComment] = useState('');
-  const [formValues, setFormValues] = useState<Record<string, unknown>>({});
+  const [drafts, setDrafts] = useState<Record<string, {
+    comment: string; formValues: Record<string, unknown>;
+  }>>({});
   const isImeComposing = useImeComposition();
 
   const active = interactions[Math.min(activeIndex, Math.max(interactions.length - 1, 0))];
   if (!active) return null;
+  const draftKey = JSON.stringify([active.sessionId, active.runId, active.interactionId]);
+  const { comment, formValues } = drafts[draftKey] ?? { comment: '', formValues: {} };
+  const setComment = (value: string) => setDrafts(previous => ({
+    ...previous, [draftKey]: { comment: value, formValues: previous[draftKey]?.formValues ?? {} },
+  }));
+  const setFormValues = (value: Record<string, unknown>) => setDrafts(previous => ({
+    ...previous, [draftKey]: { comment: previous[draftKey]?.comment ?? '', formValues: value },
+  }));
 
   const expired = isExpired(active);
   const submitError = readSubmitError(active);
@@ -174,7 +183,7 @@ export function InteractionTray({
         ? 'a2ui'
       : presentationMode === 'json-schema-form' && fallbackSchema
         ? 'json-schema-form'
-        : active.requestSchema && !active.presentation
+        : active.requestSchema && !active.presentation?.a2ui
           ? 'json-schema-form'
           : 'basic-controls';
   const schemaForForm =
@@ -313,6 +322,7 @@ export function InteractionTray({
           />
         ) : mode === 'json-schema-form' && schemaForForm ? (
           <InteractionSchemaForm
+            key={draftKey}
             schema={schemaForForm}
             values={formValues}
             onChange={setFormValues}

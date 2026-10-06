@@ -407,6 +407,46 @@ test('structured form submits the full response payload', async ({ page }) => {
   });
 });
 
+test('scalar input schema renders a field and submits the result envelope', async ({ page }) => {
+  const state = {
+    submits: [], resolvedIds: new Set(), sessionCreated: false,
+    events: () => [requestedEvent({ interactionId: 'int-scalar', kind: 'structured_input',
+      presentation: { title: '补充输入', description: 'Please provide the next input' },
+      requestSchema: { type: 'string' } })],
+  };
+  await installFixture(page, state);
+  await createSession(page);
+  await page.reload();
+  await page.getByTestId('interaction-field-result').fill('remote answer');
+  await page.getByTestId('interaction-submit').click();
+  await expect.poll(() => state.submits.length).toBe(1);
+  expect(state.submits[0]).toMatchObject({ InteractionId: 'int-scalar', Action: 'submit',
+    Response: { result: 'remote answer' } });
+});
+
+test('parallel input drafts stay with their interaction when switching branches', async ({ page }) => {
+  const state = {
+    submits: [], resolvedIds: new Set(), sessionCreated: false,
+    events: () => ['left', 'right'].map(branch => requestedEvent({
+      interactionId: `int-${branch}`, kind: 'structured_input',
+      requestSchema: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'] },
+    })),
+  };
+  await installFixture(page, state);
+  await createSession(page);
+  await page.reload();
+  const field = page.getByTestId('interaction-field-answer');
+  await field.fill('left answer');
+  await page.getByTestId('interaction-tray-next').click();
+  await expect(field).toHaveValue('');
+  await field.fill('right answer');
+  await page.getByTestId('interaction-tray-prev').click();
+  await expect(field).toHaveValue('left answer');
+  await page.getByTestId('interaction-submit').click();
+  await expect.poll(() => state.submits.length).toBe(1);
+  expect(state.submits[0]).toMatchObject({ InteractionId: 'int-left', Response: { answer: 'left answer' } });
+});
+
 test('two tabs: first-wins receipt, second tab never duplicates the decision', async ({ browser }) => {
   const context = await browser.newContext();
   const state = {
