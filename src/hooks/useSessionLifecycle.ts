@@ -824,7 +824,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
     // Invalidate an older session hydrate immediately. A fast user can type
     // and send while CreateSession is in flight; submitDraft waits on this
     // exact promise instead of starting a second session or using the prior one.
-    loadSessionGenerationRef.current += 1;
+    const generation = ++loadSessionGenerationRef.current;
     runSubscriptionAbortRef.current?.abort();
     currentSessionIdRef.current = null;
     useSessionStore.getState().setCurrentSessionId(null);
@@ -832,7 +832,10 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
     const creation = api.createSession(agentId)
       .then((session) => {
         const newId = session.SessionId || null;
-        if (newId && useBootstrapStore.getState().agentId === agentId) {
+        // A newer history selection or blank draft owns the view, even when
+        // the earlier CreateSession request succeeds afterward.
+        if (newId && useBootstrapStore.getState().agentId === agentId
+          && loadSessionGenerationRef.current === generation) {
           const preserveMessages = useMessageStore.getState().messages.some((message) => (
             message.eventType === 'optimistic_user_message'
             || message.eventType === 'optimistic_assistant_placeholder'
@@ -859,7 +862,8 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
 
   const waitForPendingSessionCreation = useCallback(async () => {
     const pending = sessionCreationPromiseRef.current;
-    return pending ? await pending : currentSessionIdRef.current;
+    if (pending) await pending;
+    return currentSessionIdRef.current;
   }, []);
 
   const deleteSession = useCallback(

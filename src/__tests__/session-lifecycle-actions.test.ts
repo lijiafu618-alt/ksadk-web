@@ -54,6 +54,37 @@ describe('shared session lifecycle actions', () => {
     expect(useSessionStore.getState().currentSessionId).toBe('new-session');
   });
 
+  it('keeps history selected while an earlier explicit CreateSession response arrives', async () => {
+    let finish!: (value: { SessionId: string }) => void;
+    const actions = lifecycle({
+      createSession: vi.fn(() => new Promise<{ SessionId: string }>(resolve => { finish = resolve; })),
+      listSessionMessages: vi.fn().mockResolvedValue({ Messages: [], HasMore: false, NextCursor: null }),
+      listSessionEvents: vi.fn().mockResolvedValue({ Events: [], Total: 0 }),
+    });
+    const pending = actions.createNewSession();
+    await actions.loadSession('selected-history');
+    const waiting = actions.waitForPendingSessionCreation();
+    expect(useSessionStore.getState().currentSessionId).toBe('selected-history');
+    finish({ SessionId: 'late-empty-session' });
+    await pending;
+    expect(await waiting).toBe('selected-history');
+    expect(useSessionStore.getState().currentSessionId).toBe('selected-history');
+    expect(await actions.waitForPendingSessionCreation()).toBe('selected-history');
+  });
+
+  it('keeps a newer blank draft when an earlier explicit CreateSession response arrives', async () => {
+    let finish!: (value: { SessionId: string }) => void;
+    const actions = lifecycle({
+      createSession: vi.fn(() => new Promise<{ SessionId: string }>(resolve => { finish = resolve; })),
+    });
+    const pending = actions.createNewSession();
+    actions.startNewConversation();
+    finish({ SessionId: 'late-empty-session' });
+    await pending;
+    expect(useSessionStore.getState().currentSessionId).toBeNull();
+    expect(useMessageStore.getState().messages).toEqual([]);
+  });
+
   it('opens a blank draft without creating sessions, including repeated clicks and list refresh', async () => {
     const createSession = vi.fn();
     const listSessionMessages = vi.fn();
