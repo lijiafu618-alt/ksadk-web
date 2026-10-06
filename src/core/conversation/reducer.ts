@@ -1,3 +1,4 @@
+import { orchestrationDescriptor } from './orchestration.js';
 import { validateAgentItem } from './agent.js';
 import type {
   ConversationItem,
@@ -53,6 +54,15 @@ export function reduceConversationItem(
   const index = state.items.findIndex((item) => item.itemId === incoming.itemId);
   const previous = index >= 0 ? state.items[index] : undefined;
   validateAgentItem(incoming, previous);
+  if (incoming.payloadSchemaRef === 'conversation.item.orchestration/v1') {
+    const graph = orchestrationDescriptor(incoming.payload);
+    const old = previous && orchestrationDescriptor(previous.payload);
+    if (!graph) throw new Error('Missing graph descriptor');
+    if (old && (old.graphDigest !== graph.graphDigest || old.nodeId !== graph.nodeId)) {
+      throw new Error('Graph node identity changed');
+    }
+    if (old && graph.stateRevision <= old.stateRevision) return state;
+  }
   if (previous && (previous.runId !== incoming.runId || previous.parentItemId !== incoming.parentItemId)) throw new Error('Conversation item locator changed');
   if (previous && (previous.nativeRef.scopeId || previous.nativeRef.scope_id) !== (incoming.nativeRef.scopeId || incoming.nativeRef.scope_id)) throw new Error('Conversation item scope changed');
   if (previous?.payload.callId && incoming.payload.callId && previous.payload.callId !== incoming.payload.callId) throw new Error('Conversation call identity changed');

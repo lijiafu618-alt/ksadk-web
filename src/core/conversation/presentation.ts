@@ -15,6 +15,7 @@ const SUPPORTED_SCHEMAS: Partial<Record<ConversationItemKind, string>> = {
   reasoning: 'conversation.item.reasoning/v1',
   tool_call: 'conversation.item.tool-call/v1',
   agent: 'conversation.item.agent/v1',
+  plan: 'conversation.item.orchestration/v1',
   approval: 'conversation.item.approval/v1',
   artifact: 'conversation.item.artifact/v1',
   a2ui: 'conversation.item.a2ui/v1',

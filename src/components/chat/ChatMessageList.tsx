@@ -1,3 +1,4 @@
+import { OrchestrationStatusView } from './OrchestrationStatusView';
 import {
   useCallback,
   useEffect,
@@ -746,7 +747,7 @@ function ChatMessage({
         />
       ) : null}
 
-      {message.agentBlock ? <AgentBlockView block={message.agentBlock} /> : message.blocks?.length ? (
+      {message.orchestration ? <OrchestrationStatusView graph={message.orchestration} /> : message.agentBlock ? <AgentBlockView block={message.agentBlock} /> : message.blocks?.length ? (
         <ProcessingBlocksView
           message={message}
           isStreaming={isStreaming}

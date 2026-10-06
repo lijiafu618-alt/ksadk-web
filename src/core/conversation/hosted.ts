@@ -1,3 +1,4 @@
+import { orchestrationDescriptor } from './orchestration.js';
 import { safeToolValue } from './safe-tool-value.js';
 /**
  * Hosted UI presentation bridge for an already-reduced canonical snapshot.
@@ -315,12 +316,27 @@ export function projectConversationStreamForHostedUi(
   const fallbackById = new Map(presentation.fallbacks.map((entry) => [entry.id, entry]));
   const messages: Message[] = [];
   const interactions: Interaction[] = [];
+  const graphs = new Set<string>();
 
   // The shared presentation is the only place allowed to combine related
   // native items (for example tool_call and tool_result by callId). Iterating
   // raw state here would reintroduce duplicate cards in Hosted UI.
   for (const entry of presentation.timeline) {
     const { item } = entry;
+    if (item.payloadSchemaRef === 'conversation.item.orchestration/v1') {
+      const descriptor = orchestrationDescriptor(item.payload);
+      if (!descriptor) continue;
+      const key = JSON.stringify([item.runId, descriptor.graphDigest]);
+      if (graphs.has(key)) continue;
+      graphs.add(key);
+      const nodes = presentation.timeline.filter(entry => entry.item.runId === item.runId
+        && entry.item.payloadSchemaRef === 'conversation.item.orchestration/v1')
+        .map(entry => orchestrationDescriptor(entry.item.payload))
+        .filter((d): d is NonNullable<typeof d> => !!d && d.graphDigest === descriptor.graphDigest);
+      messages.push({ ...messageBase(item), role: 'model', content: '',
+        orchestration: { runId: item.runId, graphDigest: descriptor.graphDigest, nodes } });
+      continue;
+    }
     if (item.kind === 'agent') {
       if (!entry.children) { messages.push(fallbackMessage(item, 'Remote agent', String(item.payload.status || 'submitted'))); continue; }
       const childResult = {...result, presentation:{...presentation, timeline:entry.children || []}};

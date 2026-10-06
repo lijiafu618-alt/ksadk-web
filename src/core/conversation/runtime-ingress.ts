@@ -1,3 +1,4 @@
+import { orchestrationDescriptor, orchestrationTerminal } from './orchestration.js';
 import { safeA2AErrorMessage } from './a2a-error.js';
 import { safeToolValue } from './safe-tool-value.js';
 import { validateAgentItem } from './agent.js';
@@ -279,7 +280,15 @@ export class RuntimeConversationIngress {
         : type === 'item.started'
           ? 'append'
           : 'replace';
-      if (data) {
+      const graph = values.map(p => orchestrationDescriptor(p.data)).find(Boolean);
+      if (graph) {
+        base.kind = 'plan';
+        base.payloadSchemaRef = 'conversation.item.orchestration/v1';
+        base.payload = { ...graph };
+        base.lifecycle = ['failed', 'indeterminate'].includes(graph.state) ? 'failed'
+          : orchestrationTerminal(graph) ? 'completed' : 'streaming';
+        base.operation = orchestrationTerminal(graph) ? 'completed' : 'replace';
+      } else if (data) {
         base.operation = ['completed', 'failed'].includes(base.lifecycle)
           ? 'completed'
           : 'replace';

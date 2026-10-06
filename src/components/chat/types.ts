@@ -17,6 +17,11 @@ export type PreviewImageSize = {
 };
 
 export type Message = {
+  orchestration?: {
+    runId: string;
+    graphDigest: string;
+    nodes: import('../../core/conversation/orchestration.js').OrchestrationDescriptor[];
+  };
   agentBlock?: {
     /** Sanitized excerpt of an explicitly public child text item, prepared by the shared projector. */
     summary?: string;

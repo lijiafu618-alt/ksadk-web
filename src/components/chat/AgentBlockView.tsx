@@ -67,6 +67,7 @@ export function AgentBlockView({ block, actions }: AgentBlockViewProps) {
   return (
     <section
       data-testid="agent-block"
+      id={`a2a-scope-${String(d.scope_id)}`}
       className="mb-3 rounded border border-slate-200 p-3 dark:border-slate-700"
     >
       <button
