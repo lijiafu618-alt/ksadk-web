@@ -69,3 +69,9 @@ SDK 原固定的未发布 Web 包含有当前 main 未保留的宿主展示扩�
 - canonical 展示层同时遵循 `visibility` 和既有 `conversation_visibility`，隐藏内部上下文；普通业务 JSON 与工具输出保留。
 - 实测 1033 Vitest、128 Node 测试、typecheck、lint 和四类构建通过。证据为 `web-kernel-agui.json/log`、`web-kernel-build.log`。
 - 本批测试不能代替真实后端与产品 Chromium 联合验收；当前产品仍未迁入正式 A2UI renderer。
+
+## Hosted 消费者追加验证（2026-10-20）
+
+真实 Runtime 浏览器 harness 支持可选的入口路径，默认本地五项行为不变。使用 `/hosted-ui/chat/` 和 Hosted 消费者实际构建的 bundle，资源、行程、工单三类卡片实时显示、纠错、原生恢复与刷新去重 **3 passed**，没有拦截 Runtime API 或 SSE。产物仍绑定已经审查的 Web 源提交 `7b6c8fc16fdd8260da36e1d312bf46932479aa2e`；本次仅调整测试入口，不重新声明另一份产品 tarball。
+
+这属于本机消费者集成验证；鉴权预发、TUI/workspace 的真实业务动作和云端多实例验收另列，不能据此签收 M2/M3。

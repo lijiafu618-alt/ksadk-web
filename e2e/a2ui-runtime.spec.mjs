@@ -42,7 +42,7 @@ async function startRuntime(project, kind, logFile, port = 0) {
     });
   });
   return {
-    url: address,
+    url: address + (process.env.KSADK_TEST_A2UI_ENTRY_PATH || ''),
     async stop() {
       if (processHandle.exitCode !== null) { log.end(); return; }
       const exited = new Promise(resolve => processHandle.once('exit', resolve));
