@@ -56,6 +56,12 @@
 - `pack:candidate` 从已提交源码执行正常 prepack 构建，归档 source commit/source archive SHA 和 npm 包 SHA；不上传 registry、不变更公开版本。Makefile 仍校验精确 Web archive 摘要，拒绝另一份同版本包。
 - 本批 Web 单测为 1042 passed；候选包安装后的结果及 M1 签收另记。
 
+## SDK Studio 消费者兼容检查
+
+SDK 原固定的未发布 Web 包含有当前 main 未保留的宿主展示扩展。已按其类型声明补回可选的 `showAgentHeader`、`renderProcessingBlock`、思考来源及 contextActivity 类型；没有整文件覆盖当前源码。宿主可在原 block 位置定制展示，返回 undefined 保持默认展示，null 明确隐藏。默认内置页面行为保留，新增实际渲染测试验证顺序和降级。
+
+明确标为 public_summary/provider_reasoning 的来源经过 canonical 与历史转换保留，不把未标记内容推断为公开摘要。最近类型/lint、四构建和 **1043 项单测**通过。SDK 消费者的投递回执四项失败已在旧固定包上同样复现，属于测试间未隔离 localStorage；SDK 正在修正 fixture 并重新跑实际消费者验证。候选包须据此重新生成，之前 2c00a25 的 tarball 不作为最终交付。
+
 ## 统一交互游标与输出隔离
 
 - AG-UI CUSTOM 中的 `ksadk.session_event` 仅接收当前会话的 Interaction/v1 公共 envelope，转入既有 SessionEvent 通路，保留物理 seq 和原逻辑 Run。

@@ -7,7 +7,7 @@
  */
 
 import { ChevronDown, FileDiff, Globe2, LoaderCircle, Sparkles, Wrench } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { MessageMarkdown } from '../MessageMarkdown';
 import { splitWorkspaceFilePaths } from '../../utils/workspace-file-paths.js';
@@ -28,6 +28,8 @@ export interface ProcessingBlocksViewProps {
   onRespondToAguiApproval?: (p: { interruptId: string; approve: boolean }) => void;
   /** Interaction/v1 records enrich the read-only approval status. */
   interactionRecords?: readonly Interaction[];
+  /** undefined uses the shared renderer; null deliberately suppresses a block. */
+  renderProcessingBlock?: (block: ProcessingBlock, message: Message) => ReactNode | undefined;
   className?: string;
 }
 
@@ -393,12 +395,15 @@ function TextRow({ block }: { block: TextBlock }) {
 export function ProcessingBlocksView({
   message,
   interactionRecords,
+  renderProcessingBlock,
   className,
 }: ProcessingBlocksViewProps) {
   const blocks: ProcessingBlock[] = message.blocks ?? [];
   return (
     <div className={cn('mb-3 min-w-0', className)} data-slot="processing-blocks">
       {blocks.map((block) => {
+        const rendered = renderProcessingBlock?.(block, message);
+        if (rendered !== undefined) return <Fragment key={block.id}>{rendered}</Fragment>;
         if (block.type === 'thinking') {
           return <ThinkingRow key={block.id} block={block} />;
         }

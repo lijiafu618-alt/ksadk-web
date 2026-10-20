@@ -137,6 +137,7 @@ function withHistoryBlocks(message: Message): Message {
       : buildBlocksFromHistory({
           content: message.content,
           reasoning: message.reasoning,
+        reasoningSource: message.reasoningSource,
           tools: message.tools,
         }),
   };

@@ -80,6 +80,8 @@ function textMessage(item: ConversationItem): Message {
         type: 'thinking',
         content: text,
         status: blockStatus(item),
+        ...(item.payload.presentationSource === 'public_summary' || item.payload.presentationSource === 'provider_reasoning'
+          ? { source: item.payload.presentationSource } : {}),
       }
     : {
         id: `conversation-block:${item.itemId}`,

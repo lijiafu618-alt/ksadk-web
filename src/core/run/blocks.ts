@@ -14,6 +14,8 @@ export interface ThinkingBlock {
   type: 'thinking';
   content: string;
   status: BlockStatus;
+  /** Explicit public provenance retained for host presentation policies. */
+  source?: 'public_summary' | 'provider_reasoning' | 'runtime_progress' | 'reasoning';
 }
 
 export interface ToolBlock {
@@ -205,6 +207,7 @@ export function getProcessingBlocks(blocks: ProcessingBlock[] | undefined): Proc
  */
 export function buildBlocksFromHistory(input: {
   reasoning?: string;
+  reasoningSource?: ThinkingBlock['source'];
   tools?: Record<string, {
     name: string;
     callId?: string;
@@ -217,7 +220,8 @@ export function buildBlocksFromHistory(input: {
 }): ProcessingBlock[] {
   const blocks: ProcessingBlock[] = [];
   if (input.reasoning && input.reasoning.trim()) {
-    blocks.push({ id: nextId('thinking'), type: 'thinking', content: input.reasoning, status: 'done' });
+    blocks.push({ id: nextId('thinking'), type: 'thinking', content: input.reasoning, status: 'done',
+      ...(input.reasoningSource ? { source: input.reasoningSource } : {}) });
   }
   if (input.tools) {
     for (const tool of Object.values(input.tools)) {

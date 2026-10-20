@@ -353,6 +353,10 @@ export class RuntimeConversationIngress {
               : 'assistant_text';
         base.payloadSchemaRef = `conversation.item.${base.kind}/v1`;
         base.payload = { text: item.parts.map((p) => p.text || '').join('') };
+        const metadata = record(source.metadata);
+        if (base.kind === 'reasoning' && (metadata.public_summary === true || metadata.provider_reasoning === true)) {
+          base.payload.presentationSource = metadata.public_summary === true ? 'public_summary' : 'provider_reasoning';
+        }
         if (type === 'item.updated' && frame.op === 'append') {
           base.operation = 'append';
           base.payload.text = record(frame.update).text || '';

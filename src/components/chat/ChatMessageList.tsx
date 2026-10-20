@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 
 import { MessageMarkdown } from '../MessageMarkdown';
 import { AgentBlockView } from './AgentBlockView';
-import { ProcessingBlocksView } from './ProcessingBlocksView';
+import { ProcessingBlocksView, type ProcessingBlocksViewProps } from './ProcessingBlocksView';
 import { StatusBanner } from './StatusBanner';
 import { shouldRenderFeedbackControls } from '../../utils/feedback.js';
 import { formatToolPayload } from '../../utils/tool-display.js';
@@ -50,6 +50,9 @@ import { interactionApprovalStatus } from './approval-status.js';
 
 export type ChatMessageListProps = {
   agentName: string;
+  /** Hosts that render their own turn heading may suppress the shared heading. */
+  showAgentHeader?: boolean;
+  renderProcessingBlock?: ProcessingBlocksViewProps['renderProcessingBlock'];
   /** Host-owned welcome surface; null suppresses it. */
   emptyState?: ReactNode;
   isMobile: boolean;
@@ -688,6 +691,7 @@ function ChatMessage({
   onSubmitAguiAction,
   interactionRecords,
   agentBlockActions,
+  renderProcessingBlock,
 }: {
   agentName: string;
   isMobile: boolean;
@@ -704,6 +708,7 @@ function ChatMessage({
   onRespondToAguiApproval?: ChatMessageListProps['onRespondToAguiApproval'];
   onSubmitFeedback: ChatMessageListProps['onSubmitFeedback'];
   onSubmitAguiAction?: ChatMessageListProps['onSubmitAguiAction'];
+  renderProcessingBlock?: ChatMessageListProps['renderProcessingBlock'];
 }) {
   if (message.role === 'user') {
     return (
@@ -760,6 +765,7 @@ function ChatMessage({
           onRespondToApproval={onRespondToApproval}
           interactionRecords={interactionRecords}
           onRespondToAguiApproval={onRespondToAguiApproval}
+          renderProcessingBlock={renderProcessingBlock}
         />
       ) : (
         <>
@@ -964,6 +970,8 @@ function ChatMessage({
 
 export function ChatMessageList({
   agentName,
+  showAgentHeader = true,
+  renderProcessingBlock,
   emptyState,
   isMobile,
   isStreaming,
@@ -1154,7 +1162,8 @@ export function ChatMessageList({
                     isStreaming={isStreaming}
                     suppressWaitingIndicator={showWaitingIndicator}
                     isLastMessage={entry.index === messages.length - 1}
-                    showAgentHeader={!continuesAssistantTurn(messages[entry.index - 1], entry.item)}
+                    showAgentHeader={showAgentHeader && !continuesAssistantTurn(messages[entry.index - 1], entry.item)}
+                    renderProcessingBlock={renderProcessingBlock}
                     message={entry.item}
                     agentBlockActions={agentBlockActions}
                     onDeleteFeedback={onDeleteFeedback}
