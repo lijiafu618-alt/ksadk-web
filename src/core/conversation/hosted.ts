@@ -265,7 +265,9 @@ function a2uiMessage(item: ConversationItem): Message | null {
     ...messageBase(item),
     role: 'a2ui',
     content: '',
-    aguiActivity: { surfaceId, messages },
+    aguiActivity: { surfaceId, messages,
+      ...(typeof item.payload.interactionId === 'string'
+        ? { interactionId: item.payload.interactionId } : {}) },
   };
 }
 

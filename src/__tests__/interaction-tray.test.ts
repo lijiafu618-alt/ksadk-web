@@ -7,6 +7,7 @@ import {
   validateA2uiPresentation,
 } from '../core/interaction/a2ui-validate.js';
 import { schemaFields } from '../components/chat/schema-fields.js';
+import { a2uiCatalog, a2uiManifest } from '../core/a2ui/catalog.js';
 
 function readSource(relativePath: string): string {
   return readFileSync(
@@ -142,13 +143,15 @@ describe('InteractionTray contract', () => {
 });
 
 describe('A2UI v0.9.1 validation and safe fallback', () => {
-  const catalog = { components: [{ id: 'root' }, { id: 'text' }] };
+  const catalog = a2uiCatalog;
 
   it('accepts the locked wire version with a matching catalog digest', () => {
     const matching = {
       wireVersion: A2UI_WIRE_VERSION,
       catalogDigest: computeA2uiCatalogDigest(catalog),
-      messages: [{ id: 'm1' }],
+      messages: [{ version: 'v0.9.1', createSurface: {
+        surfaceId: 'test', catalogId: a2uiManifest.catalog_id,
+      } }],
     };
     expect(validateA2uiPresentation(matching, catalog)).toBe('a2ui');
   });

@@ -158,11 +158,9 @@ export function InteractionTray({
       ? 'basic-controls'
       : presentationMode === 'a2ui'
         ? 'a2ui'
-      : presentationMode === 'json-schema-form' && fallbackSchema
+      : fallbackSchema
         ? 'json-schema-form'
-        : active.requestSchema && !active.presentation
-          ? 'json-schema-form'
-          : 'basic-controls';
+        : 'basic-controls';
   const schemaForForm =
     mode === 'json-schema-form'
       ? fallbackSchema || active.requestSchema

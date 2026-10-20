@@ -8,6 +8,7 @@ import type {
   ConversationTextPresentation,
   ConversationTimelineEntry,
 } from './types.js';
+import { mergeA2uiMessages } from '../a2ui/history.js';
 
 const SUPPORTED_SCHEMAS: Partial<Record<ConversationItemKind, string>> = {
   user_message: 'conversation.item.user_message/v1',
@@ -139,13 +140,16 @@ function mergeTimelineItem(
   incoming: ConversationItem,
 ): ConversationItem {
   const preserveTerminal = itemLifecycleTerminal(previous) && !itemLifecycleTerminal(incoming);
+  const a2ui = previous.kind === 'a2ui' && incoming.kind === 'a2ui'
+    && Array.isArray(previous.payload.data) && Array.isArray(incoming.payload.data)
+    ? { data: mergeA2uiMessages(previous.payload.data, incoming.payload.data) } : {};
   return {
     ...previous,
     ...incoming,
     itemId: previous.itemId,
     parentItemId: previous.parentItemId,
     sourceEventIds: [...new Set([...previous.sourceEventIds, ...incoming.sourceEventIds])],
-    payload: { ...previous.payload, ...incoming.payload, ...(previous.payload.sourceKind === 'tool_result' && incoming.payload.sourceKind === 'tool_call' ? {executionStatus:previous.payload.executionStatus, sourceKind:'tool_result'} : {}) },
+    payload: { ...previous.payload, ...incoming.payload, ...a2ui, ...(previous.payload.sourceKind === 'tool_result' && incoming.payload.sourceKind === 'tool_call' ? {executionStatus:previous.payload.executionStatus, sourceKind:'tool_result'} : {}) },
     nativeRef: { ...previous.nativeRef, ...incoming.nativeRef },
     ...(preserveTerminal ? { lifecycle: previous.lifecycle, operation: previous.operation } : {}),
   };

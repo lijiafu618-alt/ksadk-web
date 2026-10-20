@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import packageJson from "./package.json" with { type: "json" }
+import { a2uiAssets } from "./scripts/a2ui-assets-plugin"
 
 const external = [
   ...Object.keys(packageJson.dependencies || {}),
@@ -10,7 +11,7 @@ const external = [
 ]
 
 export default defineConfig({
-  plugins: [react(), { name: "teams-styles", generateBundle() { this.emitFile({ type: "asset", fileName: "teams.css", source: readFileSync(path.resolve(__dirname, "src/components/teams/teams.css"), "utf8") }); } }],
+  plugins: [react(), a2uiAssets(), { name: "teams-styles", generateBundle() { this.emitFile({ type: "asset", fileName: "teams.css", source: readFileSync(path.resolve(__dirname, "src/components/teams/teams.css"), "utf8") }); } }],
   build: {
     outDir: "dist-lib",
     emptyOutDir: true,

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { jsonValue, type JsonValue } from '../../types/json-value.js';
 import { validateInput } from '../../core/interaction/schema.js';
 import { useImeComposition } from '../../hooks/useImeComposition.js';
+import { schemaFields } from './schema-fields.js';
 
 type Schema = Record<string, unknown>;
 type FieldProps = {
@@ -13,6 +14,32 @@ const controlClass = 'w-full rounded-md border border-[var(--ksadk-interaction-b
 const isObject = (value: unknown): value is Record<string, JsonValue> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const pretty = (value: JsonValue | undefined) => value === undefined ? '' : JSON.stringify(value, null, 2);
+
+function Choices({ choices, multiple, allowOther, ...props }: FieldProps & {
+  choices: unknown[]; multiple: boolean; allowOther: boolean;
+}) {
+  const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+  const selected = multiple && Array.isArray(props.value) ? props.value : [];
+  const known = (value: unknown) => choices.some(choice => equal(choice, value));
+  return <div data-testid={`interaction-field-${props.path || 'value'}`} className="space-y-1">
+    {choices.map((choice, index) => <label key={index} className="flex min-h-10 items-center gap-2">
+      <span>{index + 1}</span>
+      <input type={multiple ? 'checkbox' : 'radio'} name={props.path}
+        disabled={props.disabled} checked={multiple ? selected.some(value => equal(value, choice)) : equal(props.value, choice)}
+        onChange={event => props.onChange(multiple
+          ? event.target.checked ? [...selected, jsonValue(choice)] : selected.filter(value => !equal(value, choice))
+          : jsonValue(choice))} />
+      <span>{typeof choice === 'string' ? choice : JSON.stringify(choice)}</span>
+    </label>)}
+    {allowOther ? <input className={controlClass} disabled={props.disabled}
+      aria-label={`${typeof props.schema.title === 'string' ? props.schema.title : props.label}：自定义回答`}
+      type={props.schema['x-codex-is-secret'] ? 'password' : 'text'}
+      value={multiple ? selected.filter(value => !known(value)).join('\n') : known(props.value) ? '' : String(props.value ?? '')}
+      onChange={event => props.onChange(multiple
+        ? [...selected.filter(known), ...(event.target.value.trim() ? [event.target.value] : [])]
+        : event.target.value)} /> : null}
+  </div>;
+}
 
 function initialValue(schema: Schema): JsonValue | undefined {
   if (Object.hasOwn(schema, 'default')) return structuredClone(jsonValue(schema.default));
@@ -70,7 +97,8 @@ function SchemaField(props: FieldProps) {
   const type = Array.isArray(schema.type) ? schema.type.filter(entry => entry !== 'null')[0] : schema.type;
   const set = (next: JsonValue | undefined) => { onInvalid(path, false); onChange(next); };
   const testId = `interaction-field-${path || 'value'}`;
-  const enumValues = Array.isArray(schema.enum) ? schema.enum : null;
+  const field = schemaFields({ properties: { value: schema } })[0];
+  const enumValues = field.enumValues;
   const complex = schema.$ref || schema.allOf || schema.anyOf || schema.oneOf
     || depth > 8 || (Array.isArray(schema.type) && schema.type.filter(entry => entry !== 'null').length > 1);
   let control;
@@ -82,13 +110,8 @@ function SchemaField(props: FieldProps) {
   } else if (Object.hasOwn(schema, 'const')) {
     control = <output data-testid={testId}>{pretty(jsonValue(schema.const))}</output>;
   } else if (enumValues) {
-    const selected = enumValues.findIndex(entry => JSON.stringify(entry) === JSON.stringify(value));
-    control = <select aria-label={label} data-testid={testId} className={controlClass}
-      disabled={disabled} value={selected < 0 ? '' : String(selected)}
-      onChange={event => set(event.target.value === '' ? undefined : jsonValue(enumValues[Number(event.target.value)]))}>
-      <option value="">请选择</option>
-      {enumValues.map((entry, index) => <option key={index} value={index}>{typeof entry === 'string' ? entry : JSON.stringify(entry)}</option>)}
-    </select>;
+    control = <Choices {...props} choices={enumValues} multiple={type === 'array' && !Array.isArray(schema.enum)}
+      allowOther={field.allowOther === true} onChange={set} />;
   } else if (type === 'object' || isObject(schema.properties)) {
     const properties = isObject(schema.properties) ? schema.properties : {};
     const required = Array.isArray(schema.required) ? schema.required : [];

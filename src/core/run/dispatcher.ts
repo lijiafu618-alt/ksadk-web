@@ -1,4 +1,5 @@
 import type { RunEvent } from './types.js';
+import { mergeA2uiActivity } from '../a2ui/history.js';
 import {
   appendThinkingBlock,
   appendTextBlock,
@@ -709,7 +710,24 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
     case 'agui_activity': {
       const msgId = `agui-a2ui-${event.surfaceId}`;
       useMessageStore.getState().patchMessages((prev) => {
-        const activity = { surfaceId: event.surfaceId, messages: event.messages };
+        const incoming = { surfaceId: event.surfaceId, messages: event.messages,
+          ...(event.interactionId ? { interactionId: event.interactionId } : {}) };
+        // A resumed wire attempt may have a new assistant message ID. The
+        // surface still belongs to its original logical interaction/history.
+        let updated = false;
+        const retained = prev.map(message => {
+          if (message.aguiActivity?.surfaceId === event.surfaceId) {
+            updated = true;
+            return { ...message, aguiActivity: mergeA2uiActivity(message.aguiActivity, incoming, event.batchId) };
+          }
+          if (message.aguiActivities?.some(item => item.surfaceId === event.surfaceId)) {
+            updated = true;
+            return { ...message, aguiActivities: message.aguiActivities.map(item => item.surfaceId === event.surfaceId
+              ? mergeA2uiActivity(item, incoming, event.batchId) : item) };
+          }
+          return message;
+        });
+        if (updated) return retained;
         let attached = false;
         const withAttachedActivity = prev.map((message) => {
           if (message.id !== event.messageId) return message;
@@ -717,7 +735,7 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
           const prior = message.aguiActivities || [];
           const next = [
             ...prior.filter((item) => item.surfaceId !== event.surfaceId),
-            activity,
+            mergeA2uiActivity(prior.find(item => item.surfaceId === event.surfaceId), incoming, event.batchId),
           ];
           return { ...message, aguiActivities: next };
         });
@@ -731,7 +749,7 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
           role: 'a2ui',
           content: '',
           timestamp: current?.timestamp || Date.now(),
-          aguiActivity: activity,
+          aguiActivity: mergeA2uiActivity(current?.aguiActivity, incoming, event.batchId),
         };
         return current
           ? prev.map((message) => message.id === msgId ? nextMessage : message)

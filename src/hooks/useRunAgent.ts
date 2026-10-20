@@ -12,7 +12,7 @@ import { RunEngineImpl, dispatchRunEventToStores, resetDispatcherState } from '.
 import type { ModelCatalogItem, Session } from '../components/chat/types.js';
 import { writePersistedSessionId } from '../utils/session.js';
 import { resolveHostedChatTransport } from '../utils/capabilities.js';
-import type { A2UIClientEventMessage } from '@copilotkit/a2ui-renderer';
+import type { A2UIClientEventMessage } from '../core/a2ui/catalog.js';
 import type { PermissionMode, RuntimeExecutionMode, RunEngineConfig } from '../core/run/types.js';
 import { HttpConversationClient, type OutboxStore } from '../core/conversation/index.js';
 import type { ConversationClient } from '../core/conversation/types.js';

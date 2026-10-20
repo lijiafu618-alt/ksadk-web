@@ -100,7 +100,7 @@ export function useInteractions(ctx: UseInteractionsContext) {
         : null;
       if (!currentSessionId) return Promise.reject(new Error('请先选择会话。'));
       return client.respond({ ...input, sessionId: currentSessionId }).then((receipt) => {
-        if (interactionV1Enabled && interaction
+        if (interaction && (interactionV1Enabled || interaction.source === 'interaction_v1')
           && (receipt.status === 'accepted' || receipt.status === 'duplicate')) {
           onAcceptedInteraction?.(interaction);
         }

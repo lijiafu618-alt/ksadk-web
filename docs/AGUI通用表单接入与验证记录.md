@@ -35,6 +35,19 @@
 - 真实 FastAPI + LangGraph + SQLite + 产品页面的独立 E2E、真实模型、候选 wheel 与 tarball 尚未交付。
 - Server、Gateway、Hosted 部署、双实例和预发尚未验收。
 
+以上为阶段 2 当时状态；后续实际进度见下节及 SDK 的实施记录。
+
+## 阶段 3 的正式 A2UI 集成
+
+- 已迁入正式 React/core renderer，依赖固定为 0.13.0，Markdown 0.2.1；JS AG-UI 包为 1.0.2。renderer 在浏览器懒加载，避免 HTMLElement/DOMPurify 破坏 SSR 导入。
+- 与 SDK 共用字节一致的官方目录、common-types、兼容目录和 manifest。完整官方目录的 JCS 摘要为 `34eefcf32a13860465c71e340dd8c6c2f5f328865db140fa31ab83e30cbf42b1`。构建校验上游字节与依赖，产物输出 `a2ui/` 原文件用于 wheel 对账。
+- 每个 surface 使用持久 processor，增量不重置输入。删除重建后旧实例回调失效，终态禁止 action；实时、历史及重放的同一批次归并展示。原七组件经独立兼容目录验证和渲染。
+- 活跃交互只在输入区提供一份可操作卡片，历史副本保持只读。非法/未知展示降级至 Runtime 保存的 Schema，展示内容不能提供另一份业务 Schema。
+- 服务端只有在具备实际事件重放能力时才宣告 `SessionEventReplay`，前端据此选择可恢复的 AG-UI；旧 peer 的 Responses 选择规则保留。
+- 旧编号选择、多选及自定义回答已保留在 JsonValue 通用表单中；不再因控件替换丢失 Codex 输入能力。
+- 最近完成：1041 Vitest、128 Node、typecheck/lint、四类构建；旧浏览器运行归属 6、重连 5、交互/审批 20 通过。另有真实 SDK 后端、LangGraph、SQLite、产品构建与 Chrome 的 4 项 E2E，以及真实模型生成卡片的 1 项 E2E，通过；两类测试均未拦截 API/SSE。后续最终报告以 SDK 实施记录为准。
+- 仍需完成兼容传输组合、候选包/干净安装和云端链路；本地 M1 尚未签收。Mock 浏览器回归仍只作为 UI 回归证据。
+
 ## 统一交互游标与输出隔离
 
 - AG-UI CUSTOM 中的 `ksadk.session_event` 仅接收当前会话的 Interaction/v1 公共 envelope，转入既有 SessionEvent 通路，保留物理 seq 和原逻辑 Run。

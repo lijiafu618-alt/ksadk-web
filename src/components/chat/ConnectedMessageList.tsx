@@ -15,7 +15,7 @@ import type { ModelStore } from '../../stores/model.js';
 import type { SessionStore } from '../../stores/session.js';
 import type { StreamingStore } from '../../stores/streaming.js';
 import type { UIStore } from '../../stores/ui.js';
-import type { A2UIClientEventMessage } from '@copilotkit/a2ui-renderer';
+import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 
 export type ConnectedMessageListProps = {
   agentName: string;

@@ -42,7 +42,7 @@ import { continuesAssistantTurn } from '../../utils/chat-message-grouping.js';
 import type { RunActivity } from '../../stores/streaming.js';
 import type { SessionCheckpoint } from '../../stores/checkpoint.js';
 import type { ComposerContextIndicator, Message, MessageAttachment } from './types';
-import type { A2UIClientEventMessage } from '@copilotkit/a2ui-renderer';
+import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { A2UIActivityMessage } from './A2UIActivityMessage';
 import { InteractionHistoryAnchor } from './InteractionHistoryAnchor';
 import type { Interaction } from '../../core/interaction/types.js';
@@ -727,6 +727,8 @@ function ChatMessage({
       <A2UIActivityMessage
         surfaceId={message.aguiActivity.surfaceId}
         messages={message.aguiActivity.messages}
+        disabled={Boolean(message.aguiActivity.interactionId)}
+        boundInteraction={interactionRecords?.find(entry => entry.interactionId === message.aguiActivity?.interactionId)}
         onAction={onSubmitAguiAction}
       />
     );
@@ -943,6 +945,8 @@ function ChatMessage({
           key={activity.surfaceId}
           surfaceId={activity.surfaceId}
           messages={activity.messages}
+          disabled={Boolean(activity.interactionId)}
+          boundInteraction={interactionRecords?.find(entry => entry.interactionId === activity.interactionId)}
           onAction={onSubmitAguiAction}
         />
       ))}

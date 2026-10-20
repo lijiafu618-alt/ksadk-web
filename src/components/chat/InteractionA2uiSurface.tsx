@@ -1,6 +1,7 @@
-import type { A2UIClientEventMessage } from '@copilotkit/a2ui-renderer';
+import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { A2UIActivityMessage } from './A2UIActivityMessage';
 import type { A2uiPresentation } from '../../core/interaction/types.js';
+import { jsonValue, type JsonValue } from '../../types/json-value.js';
 
 /**
  * Renders a validated A2UI v0.9.1 interaction surface. Only reached when
@@ -16,21 +17,26 @@ export function InteractionA2uiSurface({
 }: {
   a2ui: A2uiPresentation;
   disabled: boolean;
-  onSubmit: (payload: Record<string, unknown>) => void;
+  onSubmit: (payload: JsonValue) => void;
   onCancel: () => void;
 }) {
+  const surfaceId = a2ui.messages.flatMap(message => {
+    const create = message.createSurface as { surfaceId?: string } | undefined;
+    return create?.surfaceId ? [create.surfaceId] : [];
+  })[0];
+  if (!surfaceId) return <div role="alert">卡片没有可展示的 surface。</div>;
   return (
     <div className="mt-3" data-testid="interaction-a2ui-surface">
       <A2UIActivityMessage
-        surfaceId={`interaction-${a2ui.wireVersion}`}
+        surfaceId={surfaceId}
         messages={a2ui.messages}
+        disabled={disabled}
         onAction={disabled ? undefined : (message: A2UIClientEventMessage) => {
           const context = (message.userAction?.context || {}) as Record<string, unknown>;
-          const payload =
-            typeof context.payload === 'object' && context.payload !== null
-              ? (context.payload as Record<string, unknown>)
-              : { ...context };
-          onSubmit(payload);
+          if (message.userAction?.name === 'cancel') { onCancel(); return; }
+          const payload = Object.prototype.hasOwnProperty.call(context, 'payload')
+            ? context.payload : context;
+          onSubmit(jsonValue(payload));
         }}
       />
       {disabled ? null : (

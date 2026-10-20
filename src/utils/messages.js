@@ -202,13 +202,16 @@ function mapBackendActivities(msg) {
       ...(Number.isSafeInteger(msg.SeqId) && msg.SeqId > 0 ? { historyOrder: { seq: msg.SeqId, index: index + 1,
         ...(Number.isSafeInteger(msg.StartSeqId) && msg.StartSeqId > 0 ? { group: msg.StartSeqId } : {}),
       } } : {}),
-      aguiActivity: { surfaceId, messages: normalizeA2uiOperations(messages) },
+      aguiActivity: { surfaceId, messages: normalizeA2uiOperations(messages),
+        ...(typeof content?.interactionId === 'string' ? { interactionId: content.interactionId } : {}),
+      },
     }];
   });
 }
 
 export function mapBackendMessages(messages) {
-  return messages.flatMap((message) => [mapBackendMessage(message), ...mapBackendActivities(message)]);
+  return coalesceA2uiActivities(messages.flatMap((message) => [mapBackendMessage(message), ...mapBackendActivities(message)]));
 }
+import { coalesceA2uiActivities } from '../core/a2ui/transcript.js';
 import { normalizeA2uiOperations } from '../core/run/a2ui.js';
 import { buildBlocksFromHistory } from '../core/run/blocks.js';

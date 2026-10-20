@@ -332,6 +332,16 @@ export class RuntimeConversationIngress {
                 : 'running',
           sourceKind: item.itemKind,
         };
+      } else if (item.itemKind === 'data' && source.protocol === 'a2ui') {
+        const data = values.find(part => part.content_type === 'data')?.data;
+        base.kind = 'a2ui';
+        base.payloadSchemaRef = 'conversation.item.a2ui/v1';
+        base.payload = {
+          surfaceId: String(record(source.metadata).surface_id || ''),
+          ...(typeof record(source.metadata).interaction_id === 'string'
+            ? { interactionId: record(source.metadata).interaction_id } : {}),
+          data: Array.isArray(data) ? data : [],
+        };
       } else if (item.itemKind === 'message' || item.itemKind === 'reasoning' ||
         (item.itemKind === 'artifact' && item.parts.length > 0 && item.parts.every(p => p.contentType === 'text'))) {
         base.kind =

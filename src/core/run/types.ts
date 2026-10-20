@@ -78,6 +78,8 @@ export type RunEvent =
   | { type: 'a2ui_interaction'; surfaceId: string; interactionId: string; kind: string; inputSchema: Record<string, unknown>; sessionId?: string | null }
   | {
       type: 'agui_activity';
+      batchId?: string;
+      interactionId?: string;
       messageId: string;
       surfaceId: string;
       messages: Array<Record<string, unknown>>;

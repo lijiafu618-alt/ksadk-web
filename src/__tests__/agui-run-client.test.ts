@@ -69,7 +69,9 @@ describe('AguiRunClient', () => {
       calls.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
       return sse([
         { type: 'RUN_STARTED', threadId: 'session-1', runId: 'run-1' },
+        { type: 'REASONING_MESSAGE_START', messageId: 'reasoning-1', role: 'reasoning' },
         { type: 'REASONING_MESSAGE_CONTENT', messageId: 'reasoning-1', delta: 'plan' },
+        { type: 'REASONING_MESSAGE_END', messageId: 'reasoning-1' },
         { type: 'TEXT_MESSAGE_START', messageId: 'message-1', role: 'assistant' },
         { type: 'TEXT_MESSAGE_CONTENT', messageId: 'message-1', delta: 'hello' },
         { type: 'TOOL_CALL_START', toolCallId: 'tool-1', toolCallName: 'lookup' },
@@ -207,7 +209,7 @@ describe('AguiRunClient', () => {
     expect(requestBodies[0].context).toEqual(expect.arrayContaining([
       expect.objectContaining({
         description: expect.stringContaining('A2UI Component Schema'),
-        value: expect.stringContaining('https://a2ui.org/specification/v0_9/basic_catalog.json'),
+        value: expect.stringContaining('https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json'),
       }),
     ]));
   });

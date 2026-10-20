@@ -286,9 +286,10 @@ function AgentWorkbenchContent({ apiAdapter, initialSurface = 'chat', routeShell
       const engineAccepted = respondToAguiApprovalRef.current({
         interruptId,
         approve: status === 'resolved',
+        status,
+        payload,
       });
       void engineAccepted;
-      void payload;
       return engineAccepted;
     },
   });

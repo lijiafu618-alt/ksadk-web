@@ -65,10 +65,14 @@ export type Message = {
     ended?: boolean;
   };
   aguiActivity?: {
+    batchIds?: string[];
+    interactionId?: string;
     surfaceId: string;
     messages: Array<Record<string, unknown>>;
   };
   aguiActivities?: Array<{
+    batchIds?: string[];
+    interactionId?: string;
     surfaceId: string;
     messages: Array<Record<string, unknown>>;
   }>;

@@ -609,11 +609,12 @@ test('unknown A2UI wire version falls back safely and never approves', async ({ 
       requestedEvent({
         interactionId: 'int-a2ui',
         kind: 'structured_input',
+        requestSchema: { type: 'object', properties: { hint: { type: 'string' } }, required: ['hint'] },
         presentation: {
           a2ui: {
             wire_version: '1.0',
             catalog_digest: 'unknown-digest',
-            messages: [{ id: 'm1', inputSchema: { type: 'object', properties: { hint: { type: 'string' } } } }],
+            messages: [{ id: 'm1', inputSchema: { type: 'object', properties: { untrusted: { type: 'string' } } } }],
           },
         },
       }),
@@ -628,6 +629,7 @@ test('unknown A2UI wire version falls back safely and never approves', async ({ 
   // schema form fallback appears instead.
   await expect(page.getByTestId('interaction-a2ui-surface')).toHaveCount(0);
   await expect(page.getByTestId('interaction-schema-form')).toBeVisible();
+  await expect(page.getByTestId('interaction-field-untrusted')).toHaveCount(0);
 
   await page.getByTestId('interaction-field-hint').fill('ok');
   await page.getByTestId('interaction-submit').click();

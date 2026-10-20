@@ -233,6 +233,8 @@ export class AguiRunClient {
       const surfaceId = String(activity.surfaceId || activity.surface_id || payload.messageId || 'default');
       events.push({
         type: 'agui_activity',
+        ...(typeof activity.batchId === 'string' ? { batchId: activity.batchId } : {}),
+        ...(typeof activity.interactionId === 'string' ? { interactionId: activity.interactionId } : {}),
         // A2UI operations belong to the assistant turn that produced them.
         // Keeping the activity on a standalone message lets later text tokens
         // push the card above the scroll position, which looks like it only
