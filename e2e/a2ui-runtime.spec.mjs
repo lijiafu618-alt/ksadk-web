@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, existsSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 const web = path.resolve(import.meta.dirname, '..');
@@ -9,47 +11,94 @@ const runtimePython = process.env.KSADK_TEST_RUNTIME_PYTHON || path.join(sdk, '.
 const runtimeAppDir = process.env.KSADK_TEST_RUNTIME_APP_DIR || sdk;
 
 async function startRuntime(project, kind, logFile, port = 0) {
+  const dockerImage = process.env.KSADK_TEST_RUNTIME_DOCKER_IMAGE;
+  const containerName = `codex-a2ui-e2e-${randomUUID()}`;
+  let publishedPort = port;
+  if (dockerImage && !publishedPort) {
+    const listener = createServer();
+    await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
+    publishedPort = listener.address().port;
+    await new Promise(resolve => listener.close(resolve));
+  }
   const environment = { ...process.env };
   for (const key of ['KSADK_AGENT_KERNEL', 'AGENT_KERNEL_ENABLED', 'KSADK_CHECKPOINT_BACKEND',
     'KSADK_CHECKPOINT_PATH', 'KSADK_CHECKPOINT_DSN', 'KSADK_DEPLOYMENT_MODE',
     'KSADK_LANGGRAPH_LOCAL_AUTO_CHECKPOINT', 'AGENT_INSTANCE_ID', 'AGENT_CONTROL_JWKS_URL']) delete environment[key];
   Object.assign(environment, {
     KSADK_SESSION_BACKEND: 'local', AGENT_KERNEL_AUTHORITY_MODE: 'local',
-    KSADK_TEST_A2UI_PROJECT: project,
-    KSADK_TEST_A2UI_WEB: process.env.KSADK_TEST_A2UI_WEB || path.join(web, 'dist-ksadk'),
+    KSADK_TEST_A2UI_PROJECT: dockerImage ? '/a2ui-project' : project,
+    KSADK_TEST_A2UI_WEB: dockerImage
+      ? '/usr/local/lib/python3.12/site-packages/ksadk/server/static'
+      : process.env.KSADK_TEST_A2UI_WEB || path.join(web, 'dist-ksadk'),
     KSADK_TEST_A2UI_AGENT: kind,
   });
   const log = createWriteStream(logFile);
   delete environment.PYTHONPATH;
   const module = process.env.KSADK_TEST_RUNTIME_APP_DIR ? 'a2ui_runtime_app' : 'tests.e2e.a2ui_runtime_app';
-  const processHandle = spawn(runtimePython, [
+  const localArgs = [
     '-m', 'uvicorn', `${module}:create_app`, '--factory', '--host', '127.0.0.1',
     '--port', String(port),
-  ], { cwd: runtimeAppDir, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+  ];
+  if (dockerImage && !existsSync(path.join(runtimeAppDir, 'a2ui_runtime_app.py'))) {
+    throw new Error('Docker E2E requires a standalone KSADK_TEST_RUNTIME_APP_DIR fixture');
+  }
+  mkdirSync(project, { recursive: true });
+  const dockerArgs = ['run', '--rm', '--name', containerName,
+    '-p', `127.0.0.1:${publishedPort}:8080`, '-v', `${project}:/a2ui-project`,
+    '-v', `${runtimeAppDir}:/a2ui-fixture:ro`, '-w', '/a2ui-fixture'];
+  for (const key of ['KSADK_SESSION_BACKEND', 'AGENT_KERNEL_AUTHORITY_MODE',
+    'KSADK_TEST_A2UI_PROJECT', 'KSADK_TEST_A2UI_WEB', 'KSADK_TEST_A2UI_AGENT',
+    'KSADK_TEST_A2UI_MCP', 'KSADK_TEST_A2UI_SUBGRAPH']) {
+    if (environment[key] !== undefined) dockerArgs.push('-e', `${key}=${environment[key]}`);
+  }
+  dockerArgs.push(dockerImage || '', 'python', '-m', 'uvicorn', 'a2ui_runtime_app:create_app',
+    '--factory', '--host', '0.0.0.0', '--port', '8080');
+  const processHandle = spawn(dockerImage ? 'docker' : runtimePython, dockerImage ? dockerArgs : localArgs,
+    { cwd: runtimeAppDir, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   processHandle.stdout.pipe(log, { end: false });
   processHandle.stderr.pipe(log, { end: false });
-  let output = '';
-  const address = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Runtime startup timeout; see ${logFile}`)), 20_000);
-    processHandle.once('error', reject);
-    processHandle.once('exit', code => {
-      clearTimeout(timer); reject(new Error(`Runtime exited during startup (${code}); see ${logFile}`));
-    });
-    processHandle.stderr.on('data', chunk => {
-      output = (output + chunk.toString()).slice(-8192);
-      const url = output.match(/Uvicorn running on (http:\/\/127\.0\.0\.1:\d+)/)?.[1];
-      if (url) { clearTimeout(timer); resolve(url); }
-    });
-  });
-  return {
-    url: address + (process.env.KSADK_TEST_A2UI_ENTRY_PATH || ''),
-    async stop() {
-      if (processHandle.exitCode !== null) { log.end(); return; }
+  async function stop() {
+    if (dockerImage) {
+      try { execFileSync('docker', ['stop', '--time', '3', containerName], { stdio: 'ignore', timeout: 8000 }); }
+      catch {
+        // --rm may already have removed a container that failed to start.
+        try { execFileSync('docker', ['rm', '-f', containerName], { stdio: 'ignore', timeout: 8000 }); }
+        catch { /* Nothing remains to clean up. */ }
+      }
+    }
+    if (processHandle.exitCode === null && processHandle.pid) {
       const exited = new Promise(resolve => processHandle.once('exit', resolve));
       processHandle.kill('SIGTERM');
       const timer = setTimeout(() => processHandle.kill('SIGKILL'), 5000);
-      await exited; clearTimeout(timer); log.end();
-    },
+      await exited;
+      clearTimeout(timer);
+    }
+    log.end();
+  }
+  let output = '';
+  let address;
+  try {
+    address = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Runtime startup timeout; see ${logFile}`)), 20_000);
+    processHandle.once('error', error => { clearTimeout(timer); reject(error); });
+    processHandle.once('exit', code => {
+      clearTimeout(timer); reject(new Error(`Runtime exited during startup (${code}); see ${logFile}`));
+    });
+    const onOutput = chunk => {
+      output = (output + chunk.toString()).slice(-8192);
+      const url = output.match(/Uvicorn running on (http:\/\/(?:127\.0\.0\.1|0\.0\.0\.0):\d+)/)?.[1];
+      if (url) { clearTimeout(timer); resolve(dockerImage ? `http://127.0.0.1:${publishedPort}` : url); }
+    };
+    processHandle.stderr.on('data', onOutput);
+    processHandle.stdout.on('data', onOutput);
+    });
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+  return {
+    url: address + (process.env.KSADK_TEST_A2UI_ENTRY_PATH || ''),
+    stop,
   };
 }
 
@@ -140,6 +189,9 @@ for (const [kind, question, value] of [
       await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
       expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(1);
       expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
+      if (process.env.KSADK_TEST_A2UI_MCP === '1') {
+        expect(executions(project).filter(row => row.phase === 'mcp')).toHaveLength(1);
+      }
       verifyOriginalThread(waitingCheckpoints, checkpoints(project));
       await page.reload();
       await expect(page.getByText(`Completed: ${value}`, { exact: true })).toHaveCount(1);

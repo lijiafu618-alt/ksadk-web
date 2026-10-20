@@ -75,3 +75,11 @@ SDK 原固定的未发布 Web 包含有当前 main 未保留的宿主展示扩�
 真实 Runtime 浏览器 harness 支持可选的入口路径，默认本地五项行为不变。使用 `/hosted-ui/chat/` 和 Hosted 消费者实际构建的 bundle，资源、行程、工单三类卡片实时显示、纠错、原生恢复与刷新去重 **3 passed**，没有拦截 Runtime API 或 SSE。产物仍绑定已经审查的 Web 源提交 `7b6c8fc16fdd8260da36e1d312bf46932479aa2e`；本次仅调整测试入口，不重新声明另一份产品 tarball。
 
 这属于本机消费者集成验证；鉴权预发、TUI/workspace 的真实业务动作和云端多实例验收另列，不能据此签收 M2/M3。
+
+## MCP 与实际 Runtime 镜像验证
+
+测试 harness 通过 `KSADK_TEST_A2UI_MCP=1` 调用 SDK 的本地 stdio MCP fixture，实际执行 initialize/call_tool，三类业务的提交、工具更新与刷新去重 **3 passed**。`KSADK_TEST_A2UI_SUBGRAPH=1` 可将暂停点放入真实子图；三类源码浏览器场景 **3 passed**。
+
+`KSADK_TEST_RUNTIME_DOCKER_IMAGE` 可选择已构建的 Host 镜像，`KSADK_TEST_RUNTIME_APP_DIR` 指向独立 fixture 目录；项目目录作为持久卷挂载，实际使用 Linux 镜像中安装的 wheel 和静态页。原五项 E2E 在首个候选镜像上 **5 passed**，包含后端容器重启。新源码对应的新镜像结果必须另行核对，不沿用旧包结果。
+
+启动失败和测试结束都清理本测试创建的进程/容器。追加这些测试能力后，默认真实后端五项 **5 passed**（`runtime-harness-final.log`）；没有拦截 Runtime API/SSE，也没有修改选定的产品 Web tarball。MCP fixture 只证明协议接入，不替代客户私有 MCP 服务验收。
