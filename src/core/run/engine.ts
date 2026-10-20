@@ -907,15 +907,25 @@ export class RunEngineImpl implements RunEngine {
           ? params.payload as Record<string, unknown>
           : {};
         const rawDecision = String(payload.decision || payload.type || '').toLowerCase();
-        this.emit({
-          type: 'approval_resolved',
-          approvalRequestId: params.interruptId,
-          decision: params.status === 'cancelled'
-            ? 'cancelled'
-            : rawDecision === 'reject' || rawDecision === 'rejected'
-              ? 'rejected'
-            : 'approved',
-        });
+        const sameWait = result.pendingInterruptIds?.includes(params.interruptId);
+        if (result.status === 'interrupted' && sameWait) {
+          this.emit({ type: 'interaction_submit_rejected', interactionId: params.interruptId,
+            message: '答案未通过 Agent 校验，请修改后重新提交。' });
+        }
+        const consumed = result.status === 'completed' || (
+          result.status === 'interrupted' && result.pendingInterruptIds?.length && !sameWait
+        );
+        if (consumed) {
+          this.emit({
+            type: 'approval_resolved',
+            approvalRequestId: params.interruptId,
+            decision: params.status === 'cancelled'
+              ? 'cancelled'
+              : rawDecision === 'reject' || rawDecision === 'rejected'
+                ? 'rejected'
+              : 'approved',
+          });
+        }
         if (result.status === 'interrupted') {
           settlement = 'cancelled';
           this.setStage('completing');
@@ -930,7 +940,8 @@ export class RunEngineImpl implements RunEngine {
         }
         this.setStage('completing');
         settlement = 'completed';
-        this.emit({ type: 'activity', phase: '运行完成', status: 'completed', countEvent: false });
+        this.emit({ type: 'terminal', status: params.status === 'cancelled' ? 'cancelled' : 'completed' });
+        this.emit({ type: 'activity', phase: params.status === 'cancelled' ? '运行已取消' : '运行完成', status: 'completed', countEvent: false });
         this.emit({ type: 'stream_ended' });
       } catch (error) {
         settlement = error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : 'failed';

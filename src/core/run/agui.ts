@@ -13,6 +13,7 @@ type AguiRunStatus = 'completed' | 'interrupted' | 'failed' | 'cancelled';
 type AguiRunResult = {
   status: AguiRunStatus;
   result: RunAgentResult;
+  pendingInterruptIds: string[];
 };
 
 type AguiRunClientOptions = {
@@ -99,6 +100,9 @@ export class AguiRunClient {
     runId: string,
     response: { interruptId: string; status: 'resolved' | 'cancelled'; payload?: unknown },
   ): Promise<AguiRunResult> {
+    if (response.status === 'resolved' && response.payload === null) {
+      throw new Error('AG-UI 1.0 根 null 答案须通过 Interaction/v1 提交。');
+    }
     const rememberedInterrupts = this.agent.pendingInterrupts.length > 0
       ? this.agent.pendingInterrupts
       : this.pendingByRun.get(this.activeRunId) || [];
@@ -106,7 +110,7 @@ export class AguiRunClient {
     // is still authoritative for its durable thread, so send the official
     // resume shape for the persisted interrupt id instead of rejecting it.
     const interrupts = rememberedInterrupts.length > 0
-      ? rememberedInterrupts
+      ? rememberedInterrupts.filter(interrupt => interrupt.id === response.interruptId)
       : [{ id: response.interruptId, reason: 'approval' } satisfies Interrupt];
     const resume = buildResumeArray(interrupts, {
       [response.interruptId]: response.status === 'resolved'
@@ -137,10 +141,19 @@ export class AguiRunClient {
     resume?: ReturnType<typeof buildResumeArray>;
     abortController?: AbortController;
   }): Promise<AguiRunResult> {
-    let status: AguiRunStatus = 'completed';
+    let status = 'completed' as AguiRunStatus;
+    let finished = false;
     const subscriber: AgentSubscriber = {
       onEvent: ({ event }) => {
-        const result = this.project(event, parameters.runId);
+        if (eventType(event) === 'RUN_FINISHED') finished = true;
+        if (eventType(event) === 'RUN_ERROR'
+          && (event as BaseEvent & { code?: string }).code === 'INPUT_RESPONSE_INVALID') {
+          for (const entry of parameters.resume || []) this.onEvent({
+            type: 'interaction_submit_rejected', interactionId: entry.interruptId,
+            message: '答案未通过 Runtime 校验，请修改后重新提交。',
+          });
+        }
+        const result = this.project(event, parameters.runId, Boolean(parameters.resume?.length));
         if (result.status) status = result.status;
         result.events.forEach((item) => this.onEvent(item));
       },
@@ -158,15 +171,15 @@ export class AguiRunClient {
       resume: parameters.resume,
       abortController: parameters.abortController,
     }, subscriber);
-    const pending = this.agent.pendingInterrupts.slice();
+    const pending = this.pendingByRun.get(parameters.runId) || this.agent.pendingInterrupts.slice();
     if (pending.length > 0) {
       this.pendingByRun.set(parameters.runId, pending);
-      status = 'interrupted';
+      if (status !== 'failed') status = 'interrupted';
     }
-    return { status, result };
+    return { status: finished ? status : 'failed', result, pendingInterruptIds: pending.map(item => item.id) };
   }
 
-  private project(event: BaseEvent, fallbackRunId: string): { events: RunEvent[]; status?: AguiRunStatus } {
+  private project(event: BaseEvent, fallbackRunId: string, resuming = false): { events: RunEvent[]; status?: AguiRunStatus } {
     const type = eventType(event);
     const runId = eventRunId(event, fallbackRunId);
     const messageId = eventMessageId(event, `${runId}:assistant`);
@@ -238,6 +251,7 @@ export class AguiRunClient {
             messageId: this.runMessageIds.get(runId) || `${runId}:assistant`,
             approvalRequestId: interrupt.id,
             protocol: 'ag-ui',
+            ...(interrupt.responseSchema ? { requestSchema: interrupt.responseSchema } : {}),
             name,
             args,
             ...(interrupt.message ? { message: interrupt.message } : {}),
@@ -247,7 +261,10 @@ export class AguiRunClient {
         events.push({ type: 'activity', phase: '等待人工确认', status: 'waiting' });
         return { events, status: 'interrupted' };
       }
-      events.push({ type: 'terminal', status: 'completed' });
+      // Resume consumption is confirmed by RunEngine before its terminal
+      // frame closes unresolved cards. A new wait is not a terminal run.
+      if (!resuming) events.push({ type: 'terminal', status: 'completed' });
+      this.pendingByRun.set(runId, []);
     } else if (type === 'RUN_ERROR') {
       events.push({ type: 'error', error: new Error('AG-UI 运行失败') });
       return { events, status: 'failed' };

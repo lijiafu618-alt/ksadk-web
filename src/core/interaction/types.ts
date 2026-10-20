@@ -1,3 +1,4 @@
+import type { JsonValue } from '../../types/json-value.js';
 /**
  * Interaction/v1 client-side types.
  *
@@ -87,7 +88,7 @@ export type InteractionSubmitInput = {
   interactionId: string;
   expectedRevision: number;
   action: InteractionAction;
-  response: Record<string, unknown>;
+  response: JsonValue;
   idempotencyKey: string;
 };
 
@@ -122,8 +123,11 @@ export function interactionIdempotencyKey(
 /** Redact a response payload into a short human-readable summary. */
 export function summarizeResponse(
   action: InteractionAction,
-  response: Record<string, unknown>,
+  response: JsonValue,
 ): string {
+  if (typeof response !== 'object' || response === null || Array.isArray(response)) {
+    return action === 'cancel' ? '已取消' : '已提交';
+  }
   const approved = response.approved;
   if (typeof approved === 'boolean') {
     return approved ? '已同意' : '已拒绝';

@@ -1,3 +1,4 @@
+import { jsonValue, type JsonValue } from '../../types/json-value.js';
 import { useState } from 'react';
 import {
   ArrowRight,
@@ -18,14 +19,14 @@ import {
   type A2uiRenderMode,
 } from '../../core/interaction/a2ui-validate.js';
 import { interactionIdempotencyKey } from '../../core/interaction/types.js';
-import { InteractionSchemaForm } from './InteractionSchemaForm';
+import { JsonSchemaInputForm } from './JsonSchemaInputForm';
 import { InteractionA2uiSurface } from './InteractionA2uiSurface';
 
 export type InteractionTrayRespondInput = {
   interactionId: string;
   expectedRevision: number;
   action: InteractionAction;
-  response: Record<string, unknown>;
+  response: JsonValue;
   idempotencyKey: string;
 };
 
@@ -39,19 +40,6 @@ export type InteractionTrayProps = {
   localCatalog?: unknown;
   className?: string;
 };
-
-function firstA2uiInputSchema(
-  a2ui: { messages: Array<Record<string, unknown>> } | null | undefined,
-): Record<string, unknown> | null {
-  for (const message of a2ui?.messages || []) {
-    const schema =
-      message.inputSchema ?? message.input_schema ?? message.schema;
-    if (typeof schema === 'object' && schema !== null) {
-      return schema as Record<string, unknown>;
-    }
-  }
-  return null;
-}
 
 function isExpired(interaction: Interaction): boolean {
   if (!interaction.expiresAt) return false;
@@ -146,7 +134,7 @@ export function InteractionTray({
   className,
 }: InteractionTrayProps) {
   const [comment, setComment] = useState('');
-  const [formValues, setFormValues] = useState<Record<string, unknown>>({});
+  const [localError, setLocalError] = useState<{ id: string; message: string } | null>(null);
   const isImeComposing = useImeComposition();
 
   const active = interactions[Math.min(activeIndex, Math.max(interactions.length - 1, 0))];
@@ -155,18 +143,16 @@ export function InteractionTray({
   const expired = isExpired(active);
   const submitError = readSubmitError(active);
   const summary = approvalSummary(active);
-  const disabled = expired || active.status === 'resolving';
+  const disabled = expired || active.status === 'resolving' || ['resolved', 'cancelled', 'expired'].includes(active.status);
   const presentationMode = validateA2uiPresentation(
     active.presentation?.a2ui,
     localCatalog,
   );
   // The canonical JSON schema form is also the safe fallback whenever the
   // A2UI presentation cannot be validated: the schema comes from the
-  // interaction's request_schema, or from the A2UI message payload.
+  // Runtime-saved request_schema; presentation messages cannot replace it.
   const fallbackSchema =
-    active.requestSchema
-    ?? firstA2uiInputSchema(active.presentation?.a2ui)
-    ?? null;
+    active.requestSchema;
   const mode: A2uiRenderMode =
     active.kind === 'approval'
       ? 'basic-controls'
@@ -182,14 +168,19 @@ export function InteractionTray({
       ? fallbackSchema || active.requestSchema
       : active.requestSchema;
 
-  const respond = (action: InteractionAction, response: Record<string, unknown>) => {
+  const respond = (action: InteractionAction, response: unknown) => {
     if (disabled) return;
+    let answer: JsonValue;
+    try { answer = jsonValue(response); } catch {
+      setLocalError({ id: active.interactionId, message: '答案必须是合法 JSON 值。' }); return;
+    }
+    setLocalError(null);
     void Promise.resolve(
       onRespond({
         interactionId: active.interactionId,
         expectedRevision: active.revision,
         action,
-        response,
+        response: answer,
         idempotencyKey: interactionIdempotencyKey(active.interactionId, active.revision),
       }),
     ).catch(() => {
@@ -297,6 +288,7 @@ export function InteractionTray({
           </p>
         ) : null}
 
+        {localError?.id === active.interactionId ? <p role="alert">{localError.message}</p> : null}
         {submitError ? (
           <p className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400" data-testid="interaction-tray-error">
             提交失败（{submitError.code}）：{submitError.message}
@@ -312,12 +304,11 @@ export function InteractionTray({
             onCancel={() => respond('cancel', {})}
           />
         ) : mode === 'json-schema-form' && schemaForForm ? (
-          <InteractionSchemaForm
+          <JsonSchemaInputForm
+            key={JSON.stringify([active.sessionId, active.interactionId, active.revision])}
             schema={schemaForForm}
-            values={formValues}
-            onChange={setFormValues}
             disabled={disabled}
-            onSubmit={() => respond('submit', formValues)}
+            onSubmit={value => respond('submit', value)}
             onCancel={() => respond('cancel', {})}
           />
         ) : active.kind === 'approval' ? (

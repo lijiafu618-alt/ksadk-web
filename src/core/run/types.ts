@@ -47,6 +47,7 @@ export type RunEvent =
       messageId: string;
       approvalRequestId: string;
       protocol: 'ag-ui' | 'responses';
+      requestSchema?: Record<string, unknown> | null;
       name: string;
       args: string;
       message?: string;
@@ -55,6 +56,7 @@ export type RunEvent =
       runId?: string;
       sessionId?: string | null;
     }
+  | { type: 'interaction_submit_rejected'; interactionId: string; message: string; sessionId?: string | null }
   | {
       type: 'approval_resolved';
       approvalRequestId: string;

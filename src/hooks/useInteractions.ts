@@ -1,3 +1,4 @@
+import type { JsonValue } from '../types/json-value.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   InteractionClientImpl,
@@ -91,7 +92,7 @@ export function useInteractions(ctx: UseInteractionsContext) {
       interactionId: string;
       expectedRevision: number;
       action: InteractionAction;
-      response: Record<string, unknown>;
+      response: JsonValue;
       idempotencyKey: string;
     }): Promise<InteractionReceipt> => {
       const interaction = currentSessionId

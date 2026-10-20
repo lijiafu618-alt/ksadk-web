@@ -11,6 +11,29 @@ function sse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe('AguiRunClient', () => {
+  it.each([false, 0, '', [], { note: null }])('sends the exact JSON answer through the official client: %j', async payload => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(Object.hasOwn(body.resume[0], 'payload')).toBe(true);
+      expect(body.resume[0].payload).toEqual(payload);
+      return sse([
+        { type: 'RUN_STARTED', threadId: 'session-json', runId: body.runId },
+        { type: 'RUN_FINISHED', threadId: 'session-json', runId: body.runId, outcome: { type: 'success' } },
+      ]);
+    });
+    const client = new AguiRunClient({ url: '/agui', agentId: 'agent', threadId: 'session-json',
+      onEvent: () => {}, fetch: fetchMock as unknown as typeof fetch });
+    expect((await client.resume('run-json', { interruptId: 'wait', status: 'resolved', payload })).status).toBe('completed');
+  });
+
+  it('rejects root null before the AG-UI transport can normalize it to absence', async () => {
+    const fetchMock = vi.fn();
+    const client = new AguiRunClient({ url: '/agui', agentId: 'agent', threadId: 'session-json',
+      onEvent: () => {}, fetch: fetchMock });
+    await expect(client.resume('run-json', { interruptId: 'wait', status: 'resolved', payload: null })).rejects.toThrow('Interaction/v1');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('uses HttpAgent and projects official text, tool, reasoning, and activity events', async () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => {

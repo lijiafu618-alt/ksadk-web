@@ -1,3 +1,4 @@
+import { isTerminalInteraction } from './types.js';
 /**
  * Interaction/v1 headless module.
  *
@@ -130,6 +131,7 @@ export function ingestSessionEventRecord(
 export function ingestApprovalRequestedEvent(event: {
   approvalRequestId: string;
   protocol: 'ag-ui' | 'responses';
+  requestSchema?: Record<string, unknown> | null;
   runId?: string;
   name?: string;
   message?: string;
@@ -149,6 +151,7 @@ export function ingestApprovalRequestedEvent(event: {
           name: event.name,
           message: event.message,
           reason: event.approvalLevel,
+          requestSchema: event.requestSchema,
         })
       : interactionFromResponsesApproval({
           approvalRequestId: event.approvalRequestId,
@@ -175,6 +178,16 @@ export function ingestApprovalResolvedEvent(event: {
 }): Interaction | null {
   const sessionId = event.sessionId || '';
   if (!sessionId || !event.approvalRequestId) return null;
+  const existing = sharedInteractionStore.get(sessionId, event.approvalRequestId);
+  if (existing?.source === 'agui' && existing.kind === 'structured_input') {
+    if (isTerminalInteraction(existing.status)) return existing;
+    sharedInteractionStore.resolveLocally(sessionId, existing.interactionId, {
+      status: event.decision === 'cancelled' ? 'cancelled' : 'resolved',
+      outcome: event.decision === 'cancelled' ? 'cancelled' : 'submitted',
+      revision: event.revision || 2, actor: 'user',
+    });
+    return sharedInteractionStore.get(sessionId, existing.interactionId);
+  }
   return ingestSessionEventRecord({
     EventType: 'approval.resolved',
     Content: {
@@ -185,4 +198,15 @@ export function ingestApprovalResolvedEvent(event: {
       resolvedAt: new Date().toISOString(),
     },
   }, sessionId);
+}
+
+/** A native response was explicitly rejected while the same wait remains. */
+export function ingestInteractionSubmitRejected(event: {
+  interactionId: string; message: string; sessionId?: string | null;
+}): void {
+  const record = sharedInteractionStore.get(event.sessionId || '', event.interactionId);
+  if (!record || record.source !== 'agui' || isTerminalInteraction(record.status)) return;
+  sharedInteractionStore.markFailed(record.sessionId, record.interactionId, {
+    code: 'input_response_invalid', message: event.message, retryable: true,
+  });
 }

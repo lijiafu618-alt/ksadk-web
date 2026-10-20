@@ -409,6 +409,8 @@ export function useRunAgent(ctx: RunAgentContext) {
   const respondToAguiApproval = useCallback((options: {
     interruptId: string;
     approve: boolean;
+    status?: 'resolved' | 'cancelled';
+    payload?: unknown;
   }) => {
     if (!options.interruptId) return false;
     const sessionId = currentSessionIdRef.current;
@@ -421,8 +423,9 @@ export function useRunAgent(ctx: RunAgentContext) {
     const accepted = engine.resumeAguiInterrupt({
       sessionId,
       interruptId: options.interruptId,
-      status: 'resolved',
-      payload: { decision: options.approve ? 'approve' : 'reject' },
+      status: options.status || 'resolved',
+      payload: Object.hasOwn(options, 'payload')
+        ? options.payload : { decision: options.approve ? 'approve' : 'reject' },
       onSettled: id => {
         onRunSettled?.(id, owner.agentId);
         drainQueue(owner);

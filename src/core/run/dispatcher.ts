@@ -11,6 +11,7 @@ import { useMessageStore } from '../../stores/message.js';
 import {
   ingestApprovalRequestedEvent,
   ingestApprovalResolvedEvent,
+  ingestInteractionSubmitRejected,
   ingestSessionEventRecord,
 } from '../interaction/index.js';
 import { useStreamingStore } from '../../stores/streaming.js';
@@ -121,7 +122,7 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
   // returns.
   if (
     sessionIsOffscreen
-    && !['activity', 'stage_changed', 'stream_ended', 'error', 'rate_limited', 'terminal', 'approval_requested', 'approval_resolved', 'stream_event', 'conversation_snapshot'].includes(event.type)
+    && !['activity', 'stage_changed', 'stream_ended', 'error', 'rate_limited', 'terminal', 'approval_requested', 'approval_resolved', 'interaction_submit_rejected', 'stream_event', 'conversation_snapshot'].includes(event.type)
   ) {
     return;
   }
@@ -298,6 +299,7 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
       ingestApprovalRequestedEvent({
         approvalRequestId: event.approvalRequestId,
         protocol: event.protocol,
+        requestSchema: event.requestSchema,
         runId: event.runId,
         name: event.name,
         message: event.message,
@@ -347,6 +349,10 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
       );
       break;
     }
+
+    case 'interaction_submit_rejected':
+      ingestInteractionSubmitRejected(event);
+      break;
 
     case 'approval_resolved':
       ingestApprovalResolvedEvent({

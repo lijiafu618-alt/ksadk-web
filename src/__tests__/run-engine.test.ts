@@ -9,6 +9,7 @@ import { useSessionStore } from '../stores/session.js';
 import { useCheckpointStore } from '../stores/checkpoint.js';
 import { dispatchRunEventToStores, resetDispatcherState } from '../core/run/dispatcher.js';
 import { sharedInteractionStore } from '../core/interaction/index.js';
+import { interactionFromAguiInterrupt } from '../core/interaction/adapters/agui.js';
 import {
   ConversationClientError,
   preflightConversationInput,
@@ -846,6 +847,52 @@ describe('RunEngineImpl', () => {
       }),
     ]);
     expect(resolved).toEqual(['approval-history-1']);
+  });
+
+  it.each(['rejected', 'next-wait', 'incomplete'] as const)('confirms native AG-UI submission from the stream: %s', async scenario => {
+    const sessionId = 'typed-confirmation';
+    sharedInteractionStore.clearSession(sessionId);
+    sharedInteractionStore.upsert(interactionFromAguiInterrupt({
+      interruptId: 'old-wait', sessionId, runId: 'original-run', requestSchema: { type: 'integer' },
+    })!);
+    sharedInteractionStore.markResolving(sessionId, 'old-wait');
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.resume[0].payload).toBe(3);
+      const frames: Array<Record<string, unknown>> = [{ type: 'RUN_STARTED', threadId: sessionId, runId: body.runId }];
+      if (scenario !== 'incomplete') frames.push({ type: 'RUN_FINISHED', threadId: sessionId, runId: body.runId,
+        outcome: { type: 'interrupt', interrupts: [{
+          id: scenario === 'rejected' ? 'old-wait' : 'new-wait', reason: 'structured_input',
+          message: 'Enter an integer', responseSchema: { type: 'integer' },
+        }] } });
+      return new Response(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join(''), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }));
+    const engine = createRunEngine(createApiFacade([]));
+    const events: RunEvent[] = [];
+    engine.subscribe(event => { events.push(event); dispatchRunEventToStores(event, { visible: true }); });
+    engine.updateConfig({ agentId: 'agent', apiFormats: ['responses'], agentFramework: 'langgraph',
+      selectedModel: '', thinkingMode: 'auto', hostedChatTransport: {
+        Protocol: 'ag-ui', Runtime: 'copilotkit', Endpoint: '/agentengine/agui', Version: '1.0',
+        Capabilities: { A2UI: true, Interrupt: true, Cancel: true },
+      } });
+    expect(engine.resumeAguiInterrupt({ sessionId, interruptId: 'old-wait', status: 'resolved', payload: 3 })).toBe(true);
+    await waitForEngineIdle(engine);
+    const old = sharedInteractionStore.get(sessionId, 'old-wait')!;
+    if (scenario === 'rejected') {
+      expect(old.status).toBe('failed');
+      expect(old.requestSchema).toEqual({ type: 'integer' });
+    } else if (scenario === 'next-wait') {
+      expect(old.status).toBe('resolved');
+      expect(old.outcome).toBe('submitted');
+      expect(sharedInteractionStore.get(sessionId, 'new-wait')?.kind).toBe('structured_input');
+      expect(sharedInteractionStore.get(sessionId, 'new-wait')?.status).toBe('pending');
+    } else {
+      expect(old.status).toBe('resolving');
+    }
+    expect(events.filter(event => event.type === 'approval_resolved')).toHaveLength(scenario === 'next-wait' ? 1 : 0);
+    sharedInteractionStore.clearSession(sessionId);
   });
 
   it('uses the latest runtime config when starting a run', async () => {

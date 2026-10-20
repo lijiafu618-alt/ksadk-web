@@ -233,7 +233,7 @@ export class InteractionStore {
     error: { code: string; message: string; retryable: boolean },
   ): void {
     const existing = this.get(sessionId, interactionId);
-    if (!existing || existing.status !== 'resolving') return;
+    if (!existing || isTerminalInteraction(existing.status)) return;
     const next: Interaction = {
       ...existing,
       status: 'failed',
