@@ -75,6 +75,7 @@ export class AguiRunClient {
   private readonly runMessageIds = new Map<string, string>();
   private readonly pendingByRun = new Map<string, Interrupt[]>();
   private activeRunId = '';
+  private readonly threadId: string;
 
   constructor(options: AguiRunClientOptions) {
     this.agent = new HttpAgent({
@@ -84,6 +85,7 @@ export class AguiRunClient {
       fetch: options.fetch,
     });
     this.onEvent = options.onEvent;
+    this.threadId = options.threadId;
   }
 
   async run(text: string, runId: string, signal?: AbortSignal): Promise<AguiRunResult> {
@@ -211,6 +213,20 @@ export class AguiRunClient {
       const toolCallId = String(payload.toolCallId || 'tool');
       const tool = this.tools.get(toolCallId) || { name: 'tool', args: '' };
       events.push({ type: 'tool_result', messageId: this.runMessageIds.get(runId) || `${runId}:assistant`, name: tool.name, output: String(payload.content || '') });
+    } else if (type === 'CUSTOM' && payload.name === 'ksadk.session_event') {
+      const envelope = asObject(payload.value);
+      if (envelope.family === 'interaction' && envelope.family_version === 1
+        && envelope.session_id === this.threadId && typeof envelope.event_type === 'string'
+        && Number.isSafeInteger(envelope.seq)) {
+        events.push({
+          type: 'stream_event', sessionId: envelope.session_id,
+          event: {
+            EventId: String(envelope.event_id || ''), EventType: envelope.event_type,
+            SessionId: envelope.session_id, InvocationId: String(envelope.run_id || ''),
+            SeqId: Number(envelope.seq), Content: { session_event: envelope },
+          },
+        });
+      }
     } else if (type === 'ACTIVITY_SNAPSHOT') {
       const content = payload.content;
       const activity = asObject(content);
@@ -232,6 +248,10 @@ export class AguiRunClient {
         this.pendingByRun.set(runId, interrupts as Interrupt[]);
         for (const interrupt of interrupts as Interrupt[]) {
           const metadata = asObject(interrupt.metadata);
+          // Its durable request has already arrived through CUSTOM on the
+          // shared Session cursor. Do not overwrite it with a legacy card
+          // whose wire attempt ID differs from the original logical Run.
+          if (metadata.interaction_v1 === true) continue;
           const tool = interrupt.toolCallId ? this.tools.get(interrupt.toolCallId) : undefined;
           const name = String(
             metadata.tool_name

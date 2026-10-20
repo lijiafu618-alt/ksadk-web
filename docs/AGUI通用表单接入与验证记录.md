@@ -34,3 +34,11 @@
 - 当前仍是原有 A2UI renderer；官方 renderer、目录资产、增量生命周期属于阶段 3。
 - 真实 FastAPI + LangGraph + SQLite + 产品页面的独立 E2E、真实模型、候选 wheel 与 tarball 尚未交付。
 - Server、Gateway、Hosted 部署、双实例和预发尚未验收。
+
+## 统一交互游标与输出隔离
+
+- AG-UI CUSTOM 中的 `ksadk.session_event` 仅接收当前会话的 Interaction/v1 公共 envelope，转入既有 SessionEvent 通路，保留物理 seq 和原逻辑 Run。
+- 正式 interrupt 标注为 Interaction/v1 时不再创建另一张 legacy 审批卡，避免 wire attempt ID 覆盖原运行身份。
+- canonical 展示层同时遵循 `visibility` 和既有 `conversation_visibility`，隐藏内部上下文；普通业务 JSON 与工具输出保留。
+- 实测 1033 Vitest、128 Node 测试、typecheck、lint 和四类构建通过。证据为 `web-kernel-agui.json/log`、`web-kernel-build.log`。
+- 本批测试不能代替真实后端与产品 Chromium 联合验收；当前产品仍未迁入正式 A2UI renderer。

@@ -11,6 +11,35 @@ function sse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe('AguiRunClient', () => {
+  it('projects the durable interaction cursor and keeps the original run identity', async () => {
+    const envelope = {
+      family: 'interaction', family_version: 1, session_id: 'session-kernel', seq: 19,
+      event_id: 'event-wait', event_type: 'interaction.requested', run_id: 'original-run',
+      payload: { interaction_id: 'wait', kind: 'structured_input', revision: 1,
+        request: { request_schema: { type: 'integer' } } },
+    };
+    const projected: RunEvent[] = [];
+    const client = new AguiRunClient({
+      url: '/agui', agentId: 'agent', threadId: 'session-kernel', onEvent: event => projected.push(event),
+      fetch: vi.fn(async () => sse([
+        { type: 'RUN_STARTED', threadId: 'session-kernel', runId: 'wire-attempt' },
+        { type: 'CUSTOM', name: 'ksadk.session_event', value: envelope },
+        { type: 'RUN_FINISHED', threadId: 'session-kernel', runId: 'wire-attempt', outcome: {
+          type: 'interrupt', interrupts: [{ id: 'wait', reason: 'structured_input', responseSchema: { type: 'integer' },
+            metadata: { interaction_v1: true, revision: 1, run_id: 'original-run' } }],
+        } },
+      ])),
+    });
+    const result = await client.run('input', 'wire-attempt');
+    expect(result.status).toBe('interrupted');
+    expect(result.pendingInterruptIds).toEqual(['wait']);
+    expect(projected).toContainEqual({ type: 'stream_event', sessionId: 'session-kernel', event: {
+      EventId: 'event-wait', EventType: 'interaction.requested', SessionId: 'session-kernel',
+      InvocationId: 'original-run', SeqId: 19, Content: { session_event: envelope },
+    } });
+    expect(projected.filter(event => event.type === 'approval_requested')).toHaveLength(0);
+  });
+
   it.each([false, 0, '', [], { note: null }])('sends the exact JSON answer through the official client: %j', async payload => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));

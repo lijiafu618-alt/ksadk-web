@@ -116,9 +116,8 @@ export class RuntimeConversationIngress {
       payload: {},
       nativeRef,
     };
-    const visibility = record(
-      record(frame.source).metadata,
-    ).conversation_visibility;
+    const sourceMetadata = record(record(frame.source).metadata);
+    const visibility = sourceMetadata.conversation_visibility ?? sourceMetadata.visibility;
     if (['public', 'internal', 'hidden'].includes(String(visibility)))
       base.visibility = visibility as ConversationItem['visibility'];
     else if (parent && frame.item_kind === 'reasoning')
