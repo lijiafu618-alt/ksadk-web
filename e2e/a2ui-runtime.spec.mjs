@@ -5,6 +5,8 @@ import path from 'node:path';
 
 const web = path.resolve(import.meta.dirname, '..');
 const sdk = process.env.KSADK_TEST_SDK_DIR || path.resolve(web, '../ksadk-python');
+const runtimePython = process.env.KSADK_TEST_RUNTIME_PYTHON || path.join(sdk, '.venv/bin/python');
+const runtimeAppDir = process.env.KSADK_TEST_RUNTIME_APP_DIR || sdk;
 
 async function startRuntime(project, kind, logFile, port = 0) {
   const environment = { ...process.env };
@@ -13,14 +15,17 @@ async function startRuntime(project, kind, logFile, port = 0) {
     'KSADK_LANGGRAPH_LOCAL_AUTO_CHECKPOINT', 'AGENT_INSTANCE_ID', 'AGENT_CONTROL_JWKS_URL']) delete environment[key];
   Object.assign(environment, {
     KSADK_SESSION_BACKEND: 'local', AGENT_KERNEL_AUTHORITY_MODE: 'local',
-    KSADK_TEST_A2UI_PROJECT: project, KSADK_TEST_A2UI_WEB: path.join(web, 'dist-ksadk'),
+    KSADK_TEST_A2UI_PROJECT: project,
+    KSADK_TEST_A2UI_WEB: process.env.KSADK_TEST_A2UI_WEB || path.join(web, 'dist-ksadk'),
     KSADK_TEST_A2UI_AGENT: kind,
   });
   const log = createWriteStream(logFile);
-  const processHandle = spawn(path.join(sdk, '.venv/bin/python'), [
-    '-m', 'uvicorn', 'tests.e2e.a2ui_runtime_app:create_app', '--factory', '--host', '127.0.0.1',
+  delete environment.PYTHONPATH;
+  const module = process.env.KSADK_TEST_RUNTIME_APP_DIR ? 'a2ui_runtime_app' : 'tests.e2e.a2ui_runtime_app';
+  const processHandle = spawn(runtimePython, [
+    '-m', 'uvicorn', `${module}:create_app`, '--factory', '--host', '127.0.0.1',
     '--port', String(port),
-  ], { cwd: sdk, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { cwd: runtimeAppDir, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   processHandle.stdout.pipe(log, { end: false });
   processHandle.stderr.pipe(log, { end: false });
   let output = '';
@@ -54,7 +59,7 @@ function executions(project) {
 }
 
 function checkpoints(project) {
-  return JSON.parse(execFileSync(path.join(sdk, '.venv/bin/python'), ['-c',
+  return JSON.parse(execFileSync(runtimePython, ['-c',
     'import json,sqlite3,sys; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True); print(json.dumps(c.execute("SELECT thread_id,checkpoint_ns,checkpoint_id FROM checkpoints ORDER BY checkpoint_id").fetchall()))',
     path.join(project, '.agentengine/ui/checkpoints.sqlite'),
   ], { encoding: 'utf8' }));
@@ -68,12 +73,38 @@ function verifyOriginalThread(before, after) {
   for (const row of before) expect(after).toContainEqual(row);
 }
 
-async function openAndAsk(page, url, question) {
+function trackSubmissions(page) {
+  const submissions = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/SubmitInteraction')) {
+      submissions.push(request.postDataJSON());
+    }
+  });
+  return submissions;
+}
+
+async function attachEvidence(info, project, before, submissions) {
+  const after = checkpoints(project);
+  expect(submissions.length).toBeGreaterThan(0);
+  expect(submissions.every(row => row.SessionId === before[0][0])).toBe(true);
+  await info.attach('native-resume-evidence', { contentType: 'application/json', body: JSON.stringify({
+    before, after, executions: executions(project), submissions,
+  }, null, 2) });
+}
+
+async function openAndAsk(page, url, question, attachment) {
   const bootstrap = page.waitForResponse(response => response.url().endsWith('/GetAgentUiBootstrap'));
   await page.goto(url);
   const data = await (await bootstrap).json();
   expect(data.Data.HostedChat.Transports[0].Capabilities.SessionEventReplay).toBe(true);
   await page.getByText('a2ui-e2e', { exact: true }).first().waitFor();
+  if (attachment) {
+    await page.getByRole('button', { name: '添加附件或选择执行模式' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: /上传附件/ }).click();
+    await (await chooser).setFiles(attachment);
+    await expect(page.getByText(attachment.name, { exact: true })).toBeVisible();
+  }
   await page.getByPlaceholder('发送消息…').fill(question);
   await page.getByPlaceholder('发送消息…').press('Enter');
   const form = page.getByTestId('interaction-a2ui-surface');
@@ -93,6 +124,7 @@ for (const [kind, question, value] of [
     const project = info.outputPath('project');
     const runtime = await startRuntime(project, kind, info.outputPath('runtime.log'));
     const pageErrors = [];
+    const submissions = trackSubmissions(page);
     page.on('pageerror', error => pageErrors.push(error.message));
     try {
       const form = await openAndAsk(page, runtime.url, question);
@@ -114,6 +146,7 @@ for (const [kind, question, value] of [
       await expect(page.getByRole('button', { name: 'Submit request', exact: true })).toHaveCount(0);
       expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
       expect(pageErrors).toEqual([]);
+      await attachEvidence(info, project, waitingCheckpoints, submissions);
     } finally { await page.close(); await runtime.stop(); }
   });
 }
@@ -121,6 +154,7 @@ for (const [kind, question, value] of [
 test('pending input survives backend restart and resumes the original checkpoint', async ({ page }, info) => {
   const project = info.outputPath('project');
   let runtime = await startRuntime(project, 'resource', info.outputPath('runtime-first.log'));
+  const submissions = trackSubmissions(page);
   try {
     await openAndAsk(page, runtime.url, '先问清楚资源，再执行查询');
     const waitingCheckpoints = checkpoints(project);
@@ -136,5 +170,34 @@ test('pending input survives backend restart and resumes the original checkpoint
     expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(1);
     expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
     verifyOriginalThread(waitingCheckpoints, checkpoints(project));
+    await attachEvidence(info, project, waitingCheckpoints, submissions);
+  } finally { await page.close(); await runtime.stop(); }
+});
+
+test('attachment foreground fallback uses the same durable input and original checkpoint', async ({ page }, info) => {
+  const project = info.outputPath('project');
+  const runtime = await startRuntime(project, 'resource', info.outputPath('runtime.log'));
+  const starts = [];
+  const submissions = trackSubmissions(page);
+  page.on('request', request => {
+    if (request.method() === 'POST' && /\/(RunAgent|agui)$/.test(new URL(request.url()).pathname)) {
+      starts.push(new URL(request.url()).pathname);
+    }
+  });
+  try {
+    const form = await openAndAsk(page, runtime.url, '请参考这个附件，先确认资源再查询', {
+      name: 'resource-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic resource notes'),
+    });
+    const waiting = checkpoints(project);
+    await form.locator('input').fill('attached-resource');
+    await form.getByRole('button', { name: 'Submit request', exact: true }).click();
+    await expect(page.getByText('Completed: attached-resource', { exact: true })).toHaveCount(1);
+    await attachEvidence(info, project, waiting, submissions);
+    expect(starts).toEqual(['/agentengine/api/v1/RunAgent']);
+    expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(1);
+    expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
+    verifyOriginalThread(waiting, checkpoints(project));
+    await page.reload();
+    await expect(page.getByText('Completed: attached-resource', { exact: true })).toHaveCount(1);
   } finally { await page.close(); await runtime.stop(); }
 });

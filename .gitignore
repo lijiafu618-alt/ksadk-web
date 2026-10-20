@@ -13,3 +13,5 @@ test-results/
 *.tgz
 *.tgz.sha256
 .DS_Store
+# Generated only for a private, traceable npm pack candidate.
+SOURCE_CANDIDATE.json

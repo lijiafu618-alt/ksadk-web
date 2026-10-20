@@ -22,6 +22,7 @@ type AguiRunClientOptions = {
   threadId: string;
   onEvent: (event: RunEvent) => void;
   fetch?: typeof fetch;
+  forwardedProps?: Record<string, unknown>;
 };
 
 type ToolState = { name: string; args: string };
@@ -76,6 +77,7 @@ export class AguiRunClient {
   private readonly pendingByRun = new Map<string, Interrupt[]>();
   private activeRunId = '';
   private readonly threadId: string;
+  private forwardedProps: Record<string, unknown>;
 
   constructor(options: AguiRunClientOptions) {
     this.agent = new HttpAgent({
@@ -86,7 +88,10 @@ export class AguiRunClient {
     });
     this.onEvent = options.onEvent;
     this.threadId = options.threadId;
+    this.forwardedProps = options.forwardedProps || {};
   }
+
+  configure(forwardedProps: Record<string, unknown>) { this.forwardedProps = forwardedProps; }
 
   async run(text: string, runId: string, signal?: AbortSignal): Promise<AguiRunResult> {
     this.activeRunId = runId;
@@ -169,7 +174,7 @@ export class AguiRunClient {
     const result = await this.agent.runAgent({
       runId: parameters.runId,
       context: [ksadkA2uiAgentContext],
-      forwardedProps: { injectA2UITool: true },
+      forwardedProps: { ...this.forwardedProps, injectA2UITool: true },
       resume: parameters.resume,
       abortController: parameters.abortController,
     }, subscriber);

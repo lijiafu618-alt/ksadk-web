@@ -11,6 +11,25 @@ function sse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe('AguiRunClient', () => {
+  it('carries model and policy selections on the recoverable AG-UI path', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = new AguiRunClient({
+      url: '/agui', agentId: 'agent', threadId: 'session-options', onEvent: () => {},
+      fetch: vi.fn(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)); bodies.push(body);
+        return sse([
+          { type: 'RUN_STARTED', threadId: body.threadId, runId: body.runId },
+          { type: 'RUN_FINISHED', threadId: body.threadId, runId: body.runId, outcome: { type: 'success' } },
+        ]);
+      }) as unknown as typeof fetch,
+    });
+    const options = { model: 'selected', modelMetadata: { id: 'selected' },
+      modelOptions: { reasoning: { enabled: false } }, toolApprovalMode: 'risk' };
+    client.configure(options);
+    await client.run('input', 'options-run');
+    expect(bodies[0].forwardedProps).toEqual({ ...options, injectA2UITool: true });
+  });
+
   it('projects the durable interaction cursor and keeps the original run identity', async () => {
     const envelope = {
       family: 'interaction', family_version: 1, session_id: 'session-kernel', seq: 19,

@@ -48,6 +48,14 @@
 - 最近完成：1041 Vitest、128 Node、typecheck/lint、四类构建；旧浏览器运行归属 6、重连 5、交互/审批 20 通过。另有真实 SDK 后端、LangGraph、SQLite、产品构建与 Chrome 的 4 项 E2E，以及真实模型生成卡片的 1 项 E2E，通过；两类测试均未拦截 API/SSE。后续最终报告以 SDK 实施记录为准。
 - 仍需完成兼容传输组合、候选包/干净安装和云端链路；本地 M1 尚未签收。Mock 浏览器回归仍只作为 UI 回归证据。
 
+## 前台兼容与候选包准备
+
+- 可恢复的 AG-UI 请求保留模型选择、reasoning 和工具权限选项；前台附件按既有 RunAgent 上传流程进入同一交互账本。后台或旧 Responses 未宣告 A2UI 的能力保持原范围。
+- 真后端/真浏览器最终本地集合扩为 5 项，包含实际上传附件；全部通过。三类真实模型生成又分别执行通过。浏览器报告携带 checkpoint 前后、公开提交身份与实际工具计数，输出可用 `KSADK_TEST_OUTPUT_DIR` 分次保留。
+- `KSADK_TEST_RUNTIME_PYTHON`、`KSADK_TEST_RUNTIME_APP_DIR`、`KSADK_TEST_A2UI_WEB` 可让同一套 E2E 针对干净安装 wheel 和包内静态页运行；不会改成 API/SSE mock。
+- `pack:candidate` 从已提交源码执行正常 prepack 构建，归档 source commit/source archive SHA 和 npm 包 SHA；不上传 registry、不变更公开版本。Makefile 仍校验精确 Web archive 摘要，拒绝另一份同版本包。
+- 本批 Web 单测为 1042 passed；候选包安装后的结果及 M1 签收另记。
+
 ## 统一交互游标与输出隔离
 
 - AG-UI CUSTOM 中的 `ksadk.session_event` 仅接收当前会话的 Interaction/v1 公共 envelope，转入既有 SessionEvent 通路，保留物理 seq 和原逻辑 Run。

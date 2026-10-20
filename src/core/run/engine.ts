@@ -273,6 +273,12 @@ export class RunEngineImpl implements RunEngine {
       });
       this.aguiThreadSessionId = sessionId;
     }
+    this.aguiClient.configure({
+      model: this.config.selectedModel || undefined,
+      modelMetadata: this.config.selectedModelMetadata || undefined,
+      modelOptions: buildModelOptionsFromThinkingMode(normalizeThinkingMode(this.config.thinkingMode)),
+      toolApprovalMode: this.config.permissionMode || 'risk',
+    });
     return this.aguiClient;
   }
 

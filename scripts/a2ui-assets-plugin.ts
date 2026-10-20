@@ -30,6 +30,10 @@ export function a2uiAssets(): Plugin {
       if (digest(canonicalize(catalog)) !== manifest.catalog_digest) {
         throw new Error('A2UI canonical catalog digest differs');
       }
+      const legacy = JSON.parse(readFileSync(new URL('legacy-seven-components.json', assetRoot), 'utf8'));
+      if (digest(canonicalize(legacy)) !== manifest.legacy_profiles[0].catalog_digest) {
+        throw new Error('A2UI compatibility catalog digest differs');
+      }
       for (const name of [...Object.keys(manifest.sources), 'legacy-seven-components.json', 'manifest.json']) {
         const file = new URL(name, assetRoot);
         this.addWatchFile(fileURLToPath(file));
