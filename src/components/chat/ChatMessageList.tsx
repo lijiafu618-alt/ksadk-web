@@ -31,6 +31,8 @@ import { MessageMarkdown } from '../MessageMarkdown';
 import { AgentBlockView } from './AgentBlockView';
 import { ProcessingBlocksView } from './ProcessingBlocksView';
 import { StatusBanner } from './StatusBanner';
+import { RunProgressIndicator } from './RunProgressIndicator';
+import { runProgressLabel } from '../../utils/run-progress.js';
 import { shouldRenderFeedbackControls } from '../../utils/feedback.js';
 import { formatToolPayload } from '../../utils/tool-display.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
@@ -989,13 +991,12 @@ export function ChatMessageList({
   void checkpoints;
   void onResumeCheckpoint;
   void CheckpointPanel;
-  // Retain the shared component props for 0.3.x consumers. Runtime progress
-  // belongs to the last assistant message, while token usage and stop controls
-  // are already rendered by ChatComposer.
-  void activity;
+  // Token usage and stop controls remain in ChatComposer. The passive footer
+  // supplements existing reasoning/tool rows without changing their renderers.
   void contextIndicator;
   void onStopGeneration;
   void onCancelRemote;
+  const progressLabel = runProgressLabel({ isStreaming, activity, messages, interactions: interactionRecords });
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollHeight, setScrollHeight] = useState(0);
@@ -1128,7 +1129,7 @@ export function ChatMessageList({
       <div data-slot="message-list-content" className="mx-auto flex w-full max-w-[64rem] flex-col pb-6 sm:pb-8">
         {messages.length === 0 && isLoadingInitialHistory ? (
         <InitialHistorySkeleton />
-        ) : messages.length === 0 && !showWaitingIndicator ? (
+        ) : messages.length === 0 && !showWaitingIndicator && !progressLabel ? (
         emptyState === undefined ? <EmptyState agentName={agentName} /> : emptyState
         ) : (
           <>
@@ -1148,7 +1149,7 @@ export function ChatMessageList({
                     agentName={agentName}
                     isMobile={isMobile}
                     isStreaming={isStreaming}
-                    suppressWaitingIndicator={showWaitingIndicator}
+                    suppressWaitingIndicator={showWaitingIndicator || Boolean(progressLabel)}
                     isLastMessage={entry.index === messages.length - 1}
                     showAgentHeader={!continuesAssistantTurn(messages[entry.index - 1], entry.item)}
                     message={entry.item}
@@ -1165,11 +1166,11 @@ export function ChatMessageList({
               </MeasuredMessageRow>
               ))}
             </div>}
-            {showWaitingIndicator && <div className="mx-auto w-full max-w-[60rem] px-2 sm:px-4" role="status" data-testid="waiting-first-token">
-              <span className="waiting-thinking-text">正在思考…</span>
-            </div>}
           </>
         )}
+        {progressLabel && <div data-testid={showWaitingIndicator ? 'waiting-first-token' : undefined}>
+          <RunProgressIndicator label={progressLabel} />
+        </div>}
       </div>
       <StatusBanner />
       {showScrollToBottom ? (

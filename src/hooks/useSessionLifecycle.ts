@@ -335,8 +335,10 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
         useStreamingStore.getState().setSessionStreaming(options.sessionId, true);
         useStreamingStore.getState().updateActivity({
           sessionId: options.sessionId,
+          runId: options.invocationId,
+          source: 'restore',
           status: 'running',
-          phase: '后台长任务运行中',
+          phase: '正在同步任务进展',
           detail: options.invocationId,
           countEvent: false,
         });
@@ -375,6 +377,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
                     useStreamingStore.getState().updateActivity({
                       sessionId: options.sessionId,
                       status: 'running',
+                      phase: '正在处理',
                       countEvent: false,
                     });
                     continue;
@@ -388,6 +391,13 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
                   const event = transportEvent.data as SessionEventRecord;
                   if (!isCurrentSubscription()) break;
                   if (event.InvocationId && event.InvocationId !== options.invocationId) continue;
+
+                  useStreamingStore.getState().updateActivity({
+                    sessionId: options.sessionId,
+                    status: 'running',
+                    phase: '正在处理',
+                    countEvent: false,
+                  });
 
                   const kernelSeq = (event as { seq?: unknown }).seq;
                   if (typeof kernelSeq === 'number') {
@@ -609,6 +619,10 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
       useSessionStore
         .getState()
         .setSessionInitialMessageHistoryLoading(sessionId, !cachedHistory);
+      const streaming = useStreamingStore.getState();
+      if (streaming.isSessionStreaming(sessionId)) {
+        streaming.updateActivity({ sessionId, phase: '正在同步任务进展', countEvent: false });
+      }
       resetCompaction();
       let visibleBaseline = useMessageStore.getState().messages;
       runSubscriptionAbortRef.current?.abort();
@@ -803,12 +817,44 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
                 && useStreamingStore.getState().isSessionStreaming(sessionId)
                 && activity?.source === 'run' && activity.runId === session.ActiveInvocationId
                 && ['connecting', 'running', 'waiting'].includes(activity.status);
+              if (nativeOwner) {
+                useStreamingStore.getState().updateActivity({
+                  sessionId, phase: '正在处理', countEvent: false,
+                });
+              }
               if (!nativeOwner) void subscribeRunEvents({
                 sessionId, invocationId: session.ActiveInvocationId!, afterSeqId: lastSeqId,
               });
+            } else {
+              const store = useStreamingStore.getState();
+              const activity = store.getSessionActivity(sessionId);
+              // An older session projection must not settle a newly submitted
+              // turn. A matching durable terminal (including history when the
+              // active pointer has already cleared) can settle its observer.
+              const terminal = session.ActiveInvocationId && activity?.runId === session.ActiveInvocationId
+                ? terminalActivityForRunEvent({ EventType: 'run_status', Content: { status } })
+                : null;
+              const historyTerminal = activity?.runId
+                ? [...(eventHistoryBySessionRef.current.get(sessionId)?.events || [])].reverse()
+                  .find(event => {
+                    const frame = (event.Content as { runtime_event?: Record<string, unknown> } | undefined)?.runtime_event;
+                    return event.InvocationId === activity.runId && !frame?.parent_scope_id && eventHasTerminalRunStatus(event);
+                  })
+                : undefined;
+              const settled = terminal || (historyTerminal && terminalActivityForRunEvent(historyTerminal));
+              if (settled) {
+                store.setSessionStreaming(sessionId, false);
+                store.updateActivity({ sessionId, ...settled, countEvent: false });
+              }
             }
           } catch (error) {
             console.warn('[SessionLifecycle] getSession for reconnect failed:', error);
+            if (isStillCurrentSession()) {
+              const store = useStreamingStore.getState();
+              if (store.isSessionStreaming(sessionId) && store.getSessionActivity(sessionId)?.phase === '正在同步任务进展') {
+                store.updateActivity({ sessionId, phase: '正在确认任务状态', countEvent: false });
+              }
+            }
           }
         }
       } catch (error) {

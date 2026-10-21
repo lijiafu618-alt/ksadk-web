@@ -62,8 +62,13 @@ export function ConnectedMessageList({
   const messages = useMessageStore(s => s.messages);
   const currentSessionId = useSessionStore((s: SessionStore) => s.currentSessionId);
   const isLoadingSessions = useSessionStore((s: SessionStore) => s.isLoadingSessions);
-  const isStreaming = useStreamingStore((s: StreamingStore) => s.isSessionStreaming(currentSessionId));
-  const activity = useStreamingStore((s: StreamingStore) => s.getSessionActivity(currentSessionId));
+  const activity = useStreamingStore((s: StreamingStore) => currentSessionId
+    ? s.getSessionActivity(currentSessionId) : s.activity);
+  const isStreaming = useStreamingStore((s: StreamingStore) => currentSessionId
+    ? s.isSessionStreaming(currentSessionId)
+    // Visible draft activity is cleared on navigation; global isStreaming alone
+    // would incorrectly show an offscreen session's run on a new empty draft.
+    : Boolean(s.isStreaming && s.activity && ['connecting', 'running', 'waiting'].includes(s.activity.status)));
   const checkpoints = useCheckpointStore(s => s.getSessionCheckpoints(currentSessionId));
   const currentMessageHistory = useSessionStore((s: SessionStore) =>
     currentSessionId ? s.messageHistory[currentSessionId] : null,
