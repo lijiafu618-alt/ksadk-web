@@ -73,6 +73,12 @@ async function startRuntime(project, kind, logFile, port = 0) {
       await exited;
       clearTimeout(timer);
     }
+    // Docker's attach pipes can remain open after its client has exited.
+    // Release only this stopped runtime's streams so the test worker exits.
+    processHandle.stdout.unpipe(log);
+    processHandle.stderr.unpipe(log);
+    processHandle.stdout.destroy();
+    processHandle.stderr.destroy();
     log.end();
   }
   let output = '';
@@ -184,8 +190,19 @@ for (const [kind, question, value] of [
       await expect(page.getByTestId('interaction-tray-error')).toBeVisible();
       expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(0);
       await form.locator('input').fill(value);
+      const timing = { submittedAt: Date.now() };
       await form.getByRole('button', { name: 'Submit request', exact: true }).dblclick();
+      if (process.env.KSADK_TEST_A2UI_MCP === '1') {
+        // Cold stdio initialization is business-tool time. Keep the original
+        // five-second UI delivery assertion after that bounded tool result.
+        await expect.poll(() => executions(project).filter(row => row.phase === 'tool').length,
+          { timeout: 15_000 }).toBe(1);
+        timing.businessToolObservedAt = Date.now();
+      }
       await expect(page.getByText(`Completed: ${value}`, { exact: true })).toHaveCount(1);
+      timing.completedVisibleAt = Date.now();
+      await info.attach('interaction-latency', { contentType: 'application/json',
+        body: JSON.stringify(timing) });
       await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
       expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(1);
       expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
