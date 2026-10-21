@@ -7,6 +7,7 @@ import {
 import type { BaseEvent, Interrupt } from '@ag-ui/core';
 import type { RunEvent } from './types.js';
 import { ksadkA2uiAgentContext, normalizeA2uiOperations } from './a2ui.js';
+import { isTerminalInteraction, type Interaction } from '../interaction/types.js';
 
 type AguiRunStatus = 'completed' | 'interrupted' | 'failed' | 'cancelled';
 
@@ -92,6 +93,26 @@ export class AguiRunClient {
   }
 
   configure(forwardedProps: Record<string, unknown>) { this.forwardedProps = forwardedProps; }
+
+  /** Canonical submissions finish on the session stream, outside HttpAgent.resume(). */
+  reconcileInteractions(interactions: readonly Interaction[]): void {
+    const remainsPending = (interrupt: Interrupt) => !interactions.some(record =>
+      interrupt.metadata?.interaction_v1 === true
+      && record.source === 'interaction_v1'
+      && record.sessionId === this.threadId
+      && record.interactionId === interrupt.id
+      && record.runId === interrupt.metadata.run_id
+      && record.revision >= Number(interrupt.metadata.revision || 1)
+      && isTerminalInteraction(record.status));
+    // pendingInterrupts is the official client's public mutable state. An Inbox
+    // receipt is insufficient; keep unresolved waits and the legacy resume path.
+    this.agent.pendingInterrupts = this.agent.pendingInterrupts.filter(remainsPending);
+    for (const [runId, interrupts] of this.pendingByRun) {
+      const pending = interrupts.filter(remainsPending);
+      if (pending.length) this.pendingByRun.set(runId, pending);
+      else this.pendingByRun.delete(runId);
+    }
+  }
 
   async run(text: string, runId: string, signal?: AbortSignal): Promise<AguiRunResult> {
     this.activeRunId = runId;

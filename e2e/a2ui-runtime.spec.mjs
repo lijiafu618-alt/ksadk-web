@@ -243,6 +243,56 @@ test('pending input survives backend restart and resumes the original checkpoint
   } finally { await page.close(); await runtime.stop(); }
 });
 
+test('same session continues for three turns after canonical submits, with acceptance feedback', async ({ page }, info) => {
+  const project = info.outputPath('project');
+  const runtime = await startRuntime(project, 'resource', info.outputPath('runtime.log'));
+  const submissions = trackSubmissions(page);
+  const starts = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/agui')) {
+      starts.push(request.postDataJSON());
+    }
+  });
+  try {
+    for (let round = 1; round <= 3; round++) {
+      const form = round === 1
+        ? await openAndAsk(page, runtime.url, '先确认资源，再查询')
+        : page.getByTestId('interaction-a2ui-surface');
+      if (round > 1) {
+        await page.getByPlaceholder('发送消息…').fill(`继续查询第 ${round} 个资源`);
+        await page.getByPlaceholder('发送消息…').press('Enter');
+        await expect(form).toHaveCount(1);
+      }
+      const value = `resource-${round}`;
+      await form.locator('input').fill(value);
+      await form.getByRole('button', { name: 'Submit request', exact: true }).click();
+      if (process.env.KSADK_TEST_A2UI_TOOL_DELAY) {
+        await expect(page.getByTestId('interaction-submit-progress')).toContainText('已提交，等待 Agent 处理');
+        await expect(form.getByRole('button', { name: 'Submit request', exact: true })).toBeDisabled();
+      }
+      await expect(page.getByText(`Completed: ${value}`, { exact: true })).toHaveCount(1);
+      await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+      expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(round);
+      expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(round);
+      await expect(page.locator('body')).not.toContainText('pending interrupt(s) not addressed by resume');
+      await expect(page.locator('body')).not.toContainText('sdk-internal-context-must-not-be-chat');
+    }
+    expect(submissions).toHaveLength(3);
+    expect(starts).toHaveLength(3);
+    expect(new Set(submissions.map(row => row.SessionId)).size).toBe(1);
+    expect(new Set(starts.map(row => row.threadId))).toEqual(new Set(submissions.map(row => row.SessionId)));
+    await page.reload();
+    await expect(page.getByText('Completed: resource-3', { exact: true })).toHaveCount(1);
+    await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+    expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(3);
+    expect(submissions).toHaveLength(3);
+    await info.attach('same-session-evidence', { contentType: 'application/json', body: JSON.stringify({
+      starts: starts.map(row => ({ threadId: row.threadId, runId: row.runId })), submissions,
+      executions: executions(project), checkpoints: checkpoints(project),
+    }, null, 2) });
+  } finally { await page.close(); await runtime.stop(); }
+});
+
 test('attachment foreground fallback uses the same durable input and original checkpoint', async ({ page }, info) => {
   const project = info.outputPath('project');
   const runtime = await startRuntime(project, 'resource', info.outputPath('runtime.log'));

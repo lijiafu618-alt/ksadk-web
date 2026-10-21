@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AguiRunClient } from '../core/run/agui.js';
 import type { RunEvent } from '../core/run/types.js';
+import { interactionFromSessionEvent } from '../core/interaction/adapters/session-events.js';
 
 function sse(events: Array<Record<string, unknown>>): Response {
   const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
@@ -11,6 +12,57 @@ function sse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe('AguiRunClient', () => {
+  it.each(['resolved', 'cancelled', 'expired'])('allows a new turn after authoritative canonical %s without refreshing', async status => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return sse([
+        { type: 'RUN_STARTED', threadId: body.threadId, runId: body.runId },
+        { type: 'RUN_FINISHED', threadId: body.threadId, runId: body.runId, outcome: body.runId === 'first'
+          ? { type: 'interrupt', interrupts: [{ id: 'wait', reason: 'structured_input',
+            metadata: { interaction_v1: true, revision: 1, run_id: 'original' } }] }
+          : { type: 'success' } },
+      ]);
+    });
+    const client = new AguiRunClient({ url: '/agui', agentId: 'agent', threadId: 'session',
+      onEvent: () => {}, fetch: fetchMock as unknown as typeof fetch });
+    await client.run('first question', 'first');
+    // This is the customer's failure: a canonical submit bypasses HttpAgent.resume().
+    await expect(client.run('next question', 'blocked')).rejects.toThrow('pending interrupt(s) not addressed by resume');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const fact = interactionFromSessionEvent({ family: 'interaction', session_id: 'session',
+      run_id: 'original', event_type: `interaction.${status}`, payload: { interaction_id: 'wait', revision: 2 } })!;
+    client.reconcileInteractions([fact]);
+    const result = await client.run('next question', 'second');
+    expect(result.status).toBe('completed');
+    expect(result.pendingInterruptIds).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves unconsumed, unrelated and legacy interrupts during canonical reconciliation', async () => {
+    const fetchMock = vi.fn(async () => sse([
+      { type: 'RUN_STARTED', threadId: 'session', runId: 'first' },
+      { type: 'RUN_FINISHED', threadId: 'session', runId: 'first', outcome: { type: 'interrupt', interrupts: [
+        { id: 'one', reason: 'structured_input', metadata: { interaction_v1: true, revision: 2, run_id: 'original' } },
+        { id: 'two', reason: 'structured_input', metadata: { interaction_v1: true, revision: 1, run_id: 'original' } },
+        { id: 'legacy', reason: 'approval' },
+      ] } },
+    ]));
+    const client = new AguiRunClient({ url: '/agui', agentId: 'agent', threadId: 'session', onEvent: () => {}, fetch: fetchMock });
+    await client.run('question', 'first');
+    const fact = interactionFromSessionEvent({ family: 'interaction', session_id: 'session', run_id: 'original',
+      event_type: 'interaction.resolved', payload: { interaction_id: 'one', revision: 3 } })!;
+    client.reconcileInteractions([
+      { ...fact, status: 'resolving', extensions: { submit_command_id: 'accepted' } },
+      { ...fact, status: 'failed' }, { ...fact, status: 'pending' },
+      { ...fact, sessionId: 'another' }, { ...fact, runId: 'another' }, { ...fact, revision: 1 },
+      { ...fact, source: 'agui' }, { ...fact, interactionId: 'legacy' },
+    ]);
+    await expect(client.run('next', 'blocked')).rejects.toThrow('3 pending interrupt(s)');
+    client.reconcileInteractions([fact]);
+    await expect(client.run('next', 'still-blocked')).rejects.toThrow('2 pending interrupt(s)');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it('carries model and policy selections on the recoverable AG-UI path', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const client = new AguiRunClient({

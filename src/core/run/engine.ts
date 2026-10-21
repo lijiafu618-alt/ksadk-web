@@ -24,6 +24,7 @@ import { KernelRunEventTranslator, peekKernelReceipt } from '../stream/kernel-ev
 import type { StreamProtocol } from '../stream/types.js';
 import type { RuntimeApiFormat } from '../../types/api.js';
 import { AguiRunClient } from './agui.js';
+import { sharedInteractionStore } from '../interaction/index.js';
 import {
   ConversationClientError,
   buildConversationInput,
@@ -273,6 +274,7 @@ export class RunEngineImpl implements RunEngine {
       });
       this.aguiThreadSessionId = sessionId;
     }
+    this.aguiClient.reconcileInteractions(sharedInteractionStore.listAll(sessionId));
     this.aguiClient.configure({
       model: this.config.selectedModel || undefined,
       modelMetadata: this.config.selectedModelMetadata || undefined,

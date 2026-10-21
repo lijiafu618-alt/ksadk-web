@@ -157,6 +157,7 @@ export class InteractionStore {
     if (!existing || !['pending', 'failed'].includes(existing.status)) return;
     const extensions = { ...existing.extensions };
     delete extensions.submit_error;
+    delete extensions.submit_command_id;
     this.records.set(this.key(sessionId, interactionId), {
       ...existing,
       status: 'resolving',

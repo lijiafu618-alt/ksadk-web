@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageCircleQuestion,
+  LoaderCircle,
   Pencil,
   X,
 } from 'lucide-react';
@@ -402,7 +403,12 @@ export function InteractionTray({
         )}
 
         {active.status === 'resolving' ? (
-          <p className="mt-2 text-xs text-[var(--ksadk-interaction-muted)]">正在提交，请稍候…</p>
+          <p role="status" data-testid="interaction-submit-progress" className="mt-2 flex items-center gap-1.5 text-xs text-[var(--ksadk-interaction-muted)]">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            {active.extensions.submit_command_id
+              ? '已提交，等待 Agent 处理。处理结果将显示在对话中。'
+              : '正在发送，请稍候…'}
+          </p>
         ) : null}
       </div>
     </div>
