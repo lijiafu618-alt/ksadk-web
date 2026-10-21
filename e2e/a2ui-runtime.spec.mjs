@@ -10,7 +10,7 @@ const sdk = process.env.KSADK_TEST_SDK_DIR || path.resolve(web, '../ksadk-python
 const runtimePython = process.env.KSADK_TEST_RUNTIME_PYTHON || path.join(sdk, '.venv/bin/python');
 const runtimeAppDir = process.env.KSADK_TEST_RUNTIME_APP_DIR || sdk;
 
-async function startRuntime(project, kind, logFile, port = 0) {
+async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
   const dockerImage = process.env.KSADK_TEST_RUNTIME_DOCKER_IMAGE;
   const containerName = `codex-a2ui-e2e-${randomUUID()}`;
   let publishedPort = port;
@@ -31,7 +31,7 @@ async function startRuntime(project, kind, logFile, port = 0) {
       ? '/usr/local/lib/python3.12/site-packages/ksadk/server/static'
       : process.env.KSADK_TEST_A2UI_WEB || path.join(web, 'dist-ksadk'),
     KSADK_TEST_A2UI_AGENT: kind,
-  });
+  }, overrides);
   const log = createWriteStream(logFile);
   delete environment.PYTHONPATH;
   const module = process.env.KSADK_TEST_RUNTIME_APP_DIR ? 'a2ui_runtime_app' : 'tests.e2e.a2ui_runtime_app';
@@ -320,3 +320,70 @@ test('attachment foreground fallback uses the same durable input and original ch
     await expect(page.getByText('Completed: attached-resource', { exact: true })).toHaveCount(1);
   } finally { await page.close(); await runtime.stop(); }
 });
+
+for (const mode of ['schema', 'invalid-catalog']) {
+  test(`${mode}: default form, correction, pending refresh, native resume and next turn`, async ({ page }, info) => {
+    const project = info.outputPath('project');
+    const options = mode === 'schema' ? { KSADK_TEST_A2UI_PRESENTATION: 'schema' }
+      : { KSADK_TEST_A2UI_BAD_CATALOG: '1' };
+    const runtime = await startRuntime(project, 'resource', info.outputPath('runtime.log'), 0, options);
+    const submissions = trackSubmissions(page);
+    try {
+      await page.goto(runtime.url);
+      await page.getByText('a2ui-e2e', { exact: true }).first().waitFor();
+      await page.getByPlaceholder('发送消息…').fill('先填写资源，再查询');
+      await page.getByPlaceholder('发送消息…').press('Enter');
+      const input = page.getByTestId('interaction-field-resource');
+      await expect(input).toBeVisible();
+      await expect(page.getByTestId('interaction-a2ui-surface')).toHaveCount(0);
+      const before = checkpoints(project);
+      await input.fill('x');
+      await page.getByTestId('interaction-submit').click();
+      await expect(page.getByTestId('interaction-schema-form').getByRole('alert')).toBeVisible();
+      expect(submissions).toHaveLength(0);
+      await page.reload();
+      await expect(input).toHaveCount(1);
+      await input.fill('schema-resource');
+      await page.getByTestId('interaction-submit').click();
+      await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+      await expect(page.getByText('Completed: schema-resource', { exact: true })).toHaveCount(1);
+      expect(executions(project).filter(row => row.phase === 'initialize')).toHaveLength(1);
+      expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(1);
+      verifyOriginalThread(before, checkpoints(project));
+      await page.getByPlaceholder('发送消息…').fill('继续填写下一个资源');
+      await page.getByPlaceholder('发送消息…').press('Enter');
+      await expect(input).toHaveCount(1);
+      await input.fill('second-resource');
+      await page.getByTestId('interaction-submit').click();
+      await expect(page.getByText('Completed: second-resource', { exact: true })).toHaveCount(1);
+      await page.reload();
+      await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+      await expect(page.getByText('Completed: second-resource', { exact: true })).toHaveCount(1);
+      expect(submissions).toHaveLength(2);
+      expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(2);
+      await expect(page.locator('body')).not.toContainText('sdk-internal-context-must-not-be-chat');
+    } finally { await page.close(); await runtime.stop(); }
+  });
+}
+
+for (const mode of ['schema', 'a2ui']) {
+  test(`${mode}: cancelling pending input never executes a business tool or revives on refresh`, async ({ page }, info) => {
+    const project = info.outputPath('project');
+    const runtime = await startRuntime(project, 'resource', info.outputPath('runtime.log'), 0,
+      mode === 'schema' ? { KSADK_TEST_A2UI_PRESENTATION: 'schema' } : {});
+    try {
+      await page.goto(runtime.url);
+      await page.getByText('a2ui-e2e', { exact: true }).first().waitFor();
+      await page.getByPlaceholder('发送消息…').fill('这个查询需要我填写资源');
+      await page.getByPlaceholder('发送消息…').press('Enter');
+      await expect(page.getByTestId('interaction-tray')).toBeVisible();
+      await page.getByTestId('interaction-cancel').click();
+      await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+      expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(0);
+      await page.reload();
+      await expect(page.getByText('a2ui-e2e', { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId('interaction-tray')).toHaveCount(0);
+      expect(executions(project).filter(row => row.phase === 'tool')).toHaveLength(0);
+    } finally { await page.close(); await runtime.stop(); }
+  });
+}
