@@ -5,6 +5,7 @@ import { agentBlockRendererCatalog } from '../core/conversation/renderer-registr
 import { RuntimeConversationIngress } from '../core/conversation/runtime-ingress.js';
 import { projectConversationItems } from '../core/conversation/presentation.js';
 import { hydrateKernelRunHistory } from '../utils/kernel-run-history.js';
+import { hydrateVisibleInteractionHistory } from '../utils/interaction-history.js';
 import { useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../stores/session.js';
 import { useMessageStore } from '../stores/message.js';
@@ -739,6 +740,24 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
             canonicalRunIds = rebuilt.canonicalRunIds;
             history = rebuilt.messages;
           }
+          if (compatible) {
+            const interactionHistory = await hydrateVisibleInteractionHistory(
+              api, sessionId, fallbackHistory, eventPage, isStillCurrentSession, signal,
+            );
+            if (!isStillCurrentSession()) return;
+            for (const record of interactionHistory.events) ingestSessionEventRecord(record, sessionId);
+            if (interactionHistory.incomplete) {
+              historyReadFailureRef.current = {
+                generation, message: '部分交互历史尚未恢复完整，旧卡片保持只读。请加载较早消息后重试。',
+              };
+              useSessionStore.getState().setSessionMessageHistory(sessionId, {
+                ...useSessionStore.getState().messageHistory[sessionId],
+                nextCursor: messagesData.NextCursor, hasMore: Boolean(messagesData.HasMore
+                  || eventHistory.loadedCount < eventHistory.total),
+                error: '部分交互历史尚未恢复完整，旧卡片保持只读。请加载较早消息后重试。',
+              });
+            }
+          }
         } catch (error) {
           if (isHistoryReloadRequired(error)) throw error;
           if (isStillCurrentSession()) historyReadFailureRef.current = {
@@ -1233,7 +1252,7 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
       if (messageResult.status === 'rejected') throw messageResult.reason;
       const messagePage = messageResult.value;
       const eventPage = eventResult.status === 'fulfilled' ? eventResult.value : null;
-      const detailWarning = detailUnavailable
+      let detailWarning = detailUnavailable
         ? '消息正文已加载，部分事件详情暂时读取失败，请重试加载更早记录。'
         : undefined;
       if (messagePage && !compatibleHistorySource({
@@ -1288,6 +1307,18 @@ export function useSessionLifecycle(ctx: SessionLifecycleContext) {
         );
         for (const record of olderEvents) {
           ingestSessionEventRecord(record, sessionId);
+        }
+      }
+      if (olderMessages.length && cachedEvents) {
+        const interactionHistory = await hydrateVisibleInteractionHistory(api, sessionId, olderMessages, {
+          Events: mergedEvents, CursorSource: cachedEvents.cursorSource,
+          HistoryEpoch: cachedEvents.historyEpoch, SnapshotSeqId: cachedEvents.snapshotSeqId,
+        }, isCurrent, signal);
+        if (!isCurrent()) return;
+        for (const record of interactionHistory.events) ingestSessionEventRecord(record, sessionId);
+        if (interactionHistory.incomplete) {
+          detailWarning = '部分交互历史尚未恢复完整，旧卡片保持只读。请加载较早消息后重试。';
+          historyReadFailureRef.current = { generation, message: detailWarning };
         }
       }
 

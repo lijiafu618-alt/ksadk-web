@@ -11,6 +11,7 @@ import {
   type Interaction,
   type InteractionEvent,
 } from './types.js';
+import { DEFAULT_INTERACTION_MESSAGE, DEFAULT_INTERACTION_TITLE } from './adapters/normalize.js';
 
 export type InteractionStoreListener = (event: InteractionEvent) => void;
 
@@ -73,9 +74,11 @@ export class InteractionStore {
    *   preserved on merge.
    */
   upsert(interaction: Interaction): InteractionEvent {
+    const existing = this.get(interaction.sessionId, interaction.interactionId);
     if (
       interaction.runId
       && !isTerminalInteraction(interaction.status)
+      && !isTerminalInteraction(existing?.status ?? 'pending')
       && this.terminalRuns.has(this.runKey(interaction.sessionId, interaction.runId))
     ) {
       interaction = {
@@ -86,7 +89,6 @@ export class InteractionStore {
         responseSummary: interaction.responseSummary ?? '运行已结束',
       };
     }
-    const existing = this.get(interaction.sessionId, interaction.interactionId);
     let next: Interaction;
     let event: InteractionEvent;
 
@@ -95,7 +97,15 @@ export class InteractionStore {
       event = { type: 'interaction_requested', interaction: next };
     } else if (isTerminalInteraction(existing.status) && !isTerminalInteraction(interaction.status)) {
       // First-wins: keep the terminal record, only fill missing facts.
-      next = existing;
+      next = {
+        ...existing,
+        title: existing.title === DEFAULT_INTERACTION_TITLE ? interaction.title : existing.title,
+        message: existing.message === DEFAULT_INTERACTION_MESSAGE ? interaction.message : existing.message,
+        kind: existing.kind === 'approval' && !existing.requestSchema
+          ? interaction.kind : existing.kind,
+        requestSchema: existing.requestSchema ?? interaction.requestSchema,
+        presentation: existing.presentation ?? interaction.presentation,
+      };
       event = { type: 'interaction_updated', interaction: next };
     } else if (
       interaction.revision < existing.revision

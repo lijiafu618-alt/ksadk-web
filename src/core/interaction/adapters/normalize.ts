@@ -67,6 +67,9 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+export const DEFAULT_INTERACTION_TITLE = '人工确认';
+export const DEFAULT_INTERACTION_MESSAGE = '本次运行需要人工处理后才能继续。';
+
 export function normalizeInteraction(fields: RawInteractionFields): Interaction {
   const kind = String(fields.kind || 'approval');
   const status = String(fields.status || 'pending');
@@ -79,10 +82,10 @@ export function normalizeInteraction(fields: RawInteractionFields): Interaction 
     sessionId: fields.sessionId,
     runId: stringOrNull(fields.runId),
     kind: (VALID_KINDS.has(kind) ? kind : 'custom') as InteractionKind,
-    title: typeof fields.title === 'string' && fields.title ? fields.title : '人工确认',
+    title: typeof fields.title === 'string' && fields.title ? fields.title : DEFAULT_INTERACTION_TITLE,
     message: typeof fields.message === 'string' && fields.message
       ? fields.message
-      : '本次运行需要人工处理后才能继续。',
+      : DEFAULT_INTERACTION_MESSAGE,
     requestSchema: asRecord(fields.requestSchema),
     presentation: a2ui
       ? {
