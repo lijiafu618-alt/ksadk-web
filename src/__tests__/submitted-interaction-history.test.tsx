@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ChatMessageList } from '../components/chat/ChatMessageList.js';
 import { interactionForA2uiActivity, missingSubmittedInputHistory } from '../components/chat/submitted-interaction-history.js';
 import { a2uiManifest } from '../core/a2ui/catalog.js';
+import { A2uiSurfaces } from '../core/a2ui/surfaces.js';
 import type { Message } from '../components/chat/types.js';
 import type { Interaction } from '../core/interaction/types.js';
 
@@ -103,6 +104,20 @@ const presented: Interaction = { ...interaction,
 };
 
 describe('same-run A2UI activity ownership', () => {
+  it('keeps an initialized official input foldable after editing the active presentation', () => {
+    const initial = [...official, { version: 'v0.9.1', updateDataModel: { surfaceId: 'form', path: '/',
+      value: { answer: { resource: 'initial-resource' } } } }];
+    const timeline = structuredClone(initial);
+    const record = { ...presented, presentation: { a2ui: { ...presented.presentation!.a2ui!, messages: initial } } };
+    const controller = new A2uiSurfaces(() => {});
+    try {
+      controller.apply(record.presentation.a2ui.messages);
+      controller.get('form')!.dataModel.set('/answer/resource', 'accepted-resource');
+      const html = render([{ ...row('final'), aguiActivities: [{ surfaceId: 'form', messages: timeline }] }], [record]);
+      expect(html.match(/data-testid="a2ui-input-history"/g)).toHaveLength(1);
+    } finally { controller.dispose(); }
+  });
+
   it.each([false, true])('recovers the missing id on an existing official activity (%s)', standalone => {
     const activity = { surfaceId: 'form', messages: official };
     const message: Message = standalone

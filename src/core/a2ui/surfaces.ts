@@ -60,7 +60,10 @@ export class A2uiSurfaces {
       if (kind === 'createSurface' && surface) throw new Error('重建卡片前必须先删除原 surface。');
       if (kind !== 'createSurface' && !surface) throw new Error('卡片缺少已接受的 createSurface。');
       if (kind === 'updateComponents') validateCatalogComponents(detail.components, surface!.defaultCatalog.id);
-      this.processor.processMessages(message as ProcessableMessage);
+      // The official DataModel owns values passed to it and edits them in
+      // place. Keep accepted operations immutable so drafts cannot rewrite
+      // the request snapshot later compared with persisted card history.
+      this.processor.processMessages(structuredClone(message) as ProcessableMessage);
       this.processed.push(serialized[index]);
       if (kind === 'deleteSurface') this.active.delete(detail.surfaceId);
       if (kind === 'createSurface') {

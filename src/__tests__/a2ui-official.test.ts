@@ -32,6 +32,25 @@ describe('official A2UI processor and pinned full catalog', () => {
     } finally { controller.dispose(); }
   });
 
+  it('does not mutate accepted operation snapshots while users edit an initialized data model', () => {
+    const controller = new A2uiSurfaces(() => {});
+    const messages = [create(), components([
+      { id: 'root', component: 'TextField', label: 'Name', value: { path: '/answer/name' } },
+    ]), { version: 'v0.9.1', updateDataModel: { surfaceId: 'card', path: '/',
+      value: { answer: { name: '', count: 1 } } } }];
+    const accepted = structuredClone(messages);
+    try {
+      controller.apply(messages);
+      const surface = controller.get('card')!;
+      surface.dataModel.set('/answer/name', 'accepted-name');
+      surface.dataModel.set('/answer/count', 0);
+      expect(messages).toEqual(accepted);
+      controller.apply(structuredClone(messages));
+      expect(controller.get('card')).toBe(surface);
+      expect(surface.dataModel.get('/answer')).toEqual({ name: 'accepted-name', count: 0 });
+    } finally { controller.dispose(); }
+  });
+
   it('allows children before root but rejects an unknown component in a later batch', () => {
     const controller = new A2uiSurfaces(() => {});
     const messages = [create(), components([{ id: 'child', component: 'Text', text: 'Child' }])];
