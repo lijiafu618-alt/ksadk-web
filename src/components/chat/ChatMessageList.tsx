@@ -50,6 +50,7 @@ import { A2UIActivityMessage } from './A2UIActivityMessage';
 import { InteractionHistoryAnchor } from './InteractionHistoryAnchor';
 import type { Interaction } from '../../core/interaction/types.js';
 import { interactionApprovalStatus, interactionInputOutcome } from './approval-status.js';
+import { missingSubmittedInputHistory } from './submitted-interaction-history.js';
 
 export type ChatMessageListProps = {
   agentName: string;
@@ -1070,6 +1071,10 @@ export function ChatMessageList({
   );
 
   const visibleItems = virtualWindow.visibleItems;
+  const unprojectedInputHistory = useMemo(
+    () => missingSubmittedInputHistory(messages, interactionRecords),
+    [messages, interactionRecords],
+  );
 
   useEffect(() => {
     if (!revealMessage) return;
@@ -1192,6 +1197,14 @@ export function ChatMessageList({
                     onSubmitAguiAction={onSubmitAguiAction}
                   />
                 )}
+                {unprojectedInputHistory.get(entry.item.id)?.map(({ interaction, anchor, surfaceIds }) => (
+                  <div key={`submitted-input-${interaction.interactionId}`} className="mx-auto mb-3 w-full max-w-[60rem] px-2 sm:px-4">
+                    {anchor ? <InteractionHistoryAnchor interaction={interaction} /> : null}
+                    {surfaceIds.map(surfaceId => <A2UIActivityMessage
+                      key={surfaceId} surfaceId={surfaceId} messages={interaction.presentation!.a2ui!.messages}
+                      boundInteraction={interaction} disabled />)}
+                  </div>
+                ))}
               </MeasuredMessageRow>
               ))}
             </div>}
