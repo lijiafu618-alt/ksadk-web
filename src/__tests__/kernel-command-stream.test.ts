@@ -106,10 +106,14 @@ describe('command-bound native hosted streaming', () => {
         .mockResolvedValueOnce(bytes(new TextDecoder().decode(encode(framesFor('root-run-1'))))),
     } as unknown as ApiFacade;
     const engine=createRunEngine(api);const settled=vi.fn();
+    const phases: string[] = [];
+    engine.subscribe(event => { if (event.type === 'activity') phases.push(event.phase); });
     engine.updateConfig({agentId:'agent',apiFormats:['responses'],agentFramework:'langgraph',selectedModel:'',thinkingMode:'auto',kernelSessionEventsEnabled:true,kernelCommandEventsEnabled:true,presentationProfile:'agent-block-v1'});
     engine.start({text:'task',sessionId:'session',attachments:[],onSettled:settled});
     await vi.waitFor(()=>expect(settled).toHaveBeenCalledWith('session','completed'),{timeout:3000});
     expect(api.runAgent).toHaveBeenCalledTimes(1);
     expect(api.subscribeSessionEvents).toHaveBeenCalledTimes(2);
+    expect(phases.indexOf('运行已入队，等待执行')).toBeGreaterThanOrEqual(0);
+    expect(phases.indexOf('正在处理')).toBeGreaterThan(phases.indexOf('运行已入队，等待执行'));
   });
 });

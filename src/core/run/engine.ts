@@ -326,6 +326,8 @@ export class RunEngineImpl implements RunEngine {
     this.invocationId = '';
     this.recordCursor(0);
     this.setStage(this.activeSessionId ? 'connecting' : 'creating-session');
+    this.emit({ type: 'activity', source: 'run', status: 'connecting',
+      phase: this.activeSessionId ? '连接运行时' : '创建会话', countEvent: false });
     const isResponsesResume = draft.responsesInput !== undefined;
     let dispatchReported = false;
     const reportDispatch = (accepted: boolean) => {
@@ -1288,6 +1290,7 @@ export class RunEngineImpl implements RunEngine {
     let terminalStatus: string | undefined;
     let consecutiveErrors = 0;
     const maxConsecutiveErrors = 6;
+    let waitingForStream = false;
 
     while (terminalStatus === undefined && consecutiveErrors < maxConsecutiveErrors) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -1311,6 +1314,11 @@ export class RunEngineImpl implements RunEngine {
           for (const chunk of split.chunks) {
             if (!chunk.trim()) continue;
             for (const transportEvent of parseSseChunk(chunk)) {
+              if (waitingForStream && (transportEvent.eventName === '__ping__'
+                || (transportEvent.data && typeof transportEvent.data === 'object'))) {
+                waitingForStream = false;
+                this.emit({ type: 'activity', phase: '正在处理', status: 'running', countEvent: false });
+              }
               const frame = transportEvent.data as Record<string, unknown> | undefined;
               if (!frame || typeof frame !== 'object') continue;
               const seq = Number(frame.seq);
@@ -1369,6 +1377,7 @@ export class RunEngineImpl implements RunEngine {
         }
         if (scopedCommand && error instanceof ApiError && error.code === 409
           && (error.detail as { Data?: { ReasonCode?: string } } | undefined)?.Data?.ReasonCode === 'KERNEL_COMMAND_PENDING') {
+          waitingForStream = true;
           this.emit({ type: 'activity', phase: '运行已入队，等待执行', status: 'waiting', countEvent: false });
           await new Promise((resolve) => setTimeout(resolve, 1000));
           if (this.abortController?.signal.aborted) return { terminalStatus: 'cancelled' };
@@ -1380,6 +1389,8 @@ export class RunEngineImpl implements RunEngine {
         }
         consecutiveErrors += 1;
         if (consecutiveErrors >= maxConsecutiveErrors) break;
+        waitingForStream = true;
+        this.emit({ type: 'activity', phase: '网络异常，尝试重连', status: 'waiting', countEvent: false });
         await new Promise((resolve) => setTimeout(resolve, 800 * consecutiveErrors));
       } finally {
         // A durable terminal or local disconnect must also release its HTTP
