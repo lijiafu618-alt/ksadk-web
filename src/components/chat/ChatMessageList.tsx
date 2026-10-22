@@ -50,7 +50,7 @@ import { A2UIActivityMessage } from './A2UIActivityMessage';
 import { InteractionHistoryAnchor } from './InteractionHistoryAnchor';
 import type { Interaction } from '../../core/interaction/types.js';
 import { interactionApprovalStatus, interactionInputOutcome } from './approval-status.js';
-import { missingSubmittedInputHistory } from './submitted-interaction-history.js';
+import { interactionForA2uiActivity, missingSubmittedInputHistory } from './submitted-interaction-history.js';
 
 export type ChatMessageListProps = {
   agentName: string;
@@ -732,12 +732,13 @@ function ChatMessage({
   }
 
   if (message.role === 'a2ui' && message.aguiActivity) {
+    const bound = interactionForA2uiActivity(message.aguiActivity, message, interactionRecords);
     return (
       <A2UIActivityMessage
         surfaceId={message.aguiActivity.surfaceId}
         messages={message.aguiActivity.messages}
-        disabled={Boolean(message.aguiActivity.interactionId)}
-        boundInteraction={interactionRecords?.find(entry => entry.interactionId === message.aguiActivity?.interactionId)}
+        disabled={Boolean(message.aguiActivity.interactionId || bound)}
+        boundInteraction={bound}
         onAction={onSubmitAguiAction}
       />
     );
@@ -965,16 +966,18 @@ function ChatMessage({
         </>
       )}
 
-      {message.aguiActivities?.map((activity) => (
+      {message.aguiActivities?.map((activity) => {
+        const bound = interactionForA2uiActivity(activity, message, interactionRecords);
+        return (
         <A2UIActivityMessage
           key={activity.surfaceId}
           surfaceId={activity.surfaceId}
           messages={activity.messages}
-          disabled={Boolean(activity.interactionId)}
-          boundInteraction={interactionRecords?.find(entry => entry.interactionId === activity.interactionId)}
+          disabled={Boolean(activity.interactionId || bound)}
+          boundInteraction={bound}
           onAction={onSubmitAguiAction}
         />
-      ))}
+      ); })}
 
       <FeedbackControls
         isLastMessage={isLastMessage}

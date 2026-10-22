@@ -2,7 +2,8 @@ import { createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ChatMessageList } from '../components/chat/ChatMessageList.js';
-import { missingSubmittedInputHistory } from '../components/chat/submitted-interaction-history.js';
+import { interactionForA2uiActivity, missingSubmittedInputHistory } from '../components/chat/submitted-interaction-history.js';
+import { a2uiManifest } from '../core/a2ui/catalog.js';
 import type { Message } from '../components/chat/types.js';
 import type { Interaction } from '../core/interaction/types.js';
 
@@ -85,5 +86,51 @@ describe('unprojected submitted node input history', () => {
       { ...interaction, status: 'pending', outcome: null }, withoutResponse,
       { ...interaction, kind: 'approval', outcome: 'approved' },
     ]).size).toBe(0);
+  });
+});
+
+const official = [
+  { version: 'v0.9.1', createSurface: { surfaceId: 'form', catalogId: a2uiManifest.catalog_id } },
+  { version: 'v0.9.1', updateComponents: { surfaceId: 'form', components: [
+    { id: 'root', component: 'Column', children: ['field', 'submit'] },
+    { id: 'field', component: 'TextField', label: '资源', value: { path: '/answer/resource' } },
+    { id: 'submit', component: 'Button', child: 'submit-label', action: { event: { name: 'submit', context: { payload: { path: '/answer' } } } } },
+    { id: 'submit-label', component: 'Text', text: '提交' },
+  ] } },
+];
+const presented: Interaction = { ...interaction,
+  presentation: { a2ui: { wireVersion: '0.9.1', catalogDigest: 'fixture', messages: official } },
+};
+
+describe('same-run A2UI activity ownership', () => {
+  it.each([false, true])('recovers the missing id on an existing official activity (%s)', standalone => {
+    const activity = { surfaceId: 'form', messages: official };
+    const message: Message = standalone
+      ? { ...row('activity'), role: 'a2ui', aguiActivity: activity }
+      : { ...row('final'), runId: undefined, invocationId: 'run', aguiActivities: [activity] };
+    expect(interactionForA2uiActivity(activity, message, [presented])).toBe(presented);
+    const html = render([message], [presented]);
+    expect(html.match(/data-testid="a2ui-input-history"/g)).toHaveLength(1);
+    expect(html).not.toContain('a2ui-input-response-fallback');
+  });
+
+  it('keeps explicit IDs authoritative and never guesses among multiple or other-run candidates', () => {
+    const activity = { surfaceId: 'form' };
+    expect(interactionForA2uiActivity({ ...activity, interactionId: 'wrong' }, row('final'), [presented])).toBeUndefined();
+    expect(interactionForA2uiActivity(activity, row('final', 'other-run'), [presented])).toBeUndefined();
+    expect(interactionForA2uiActivity(activity, row('final'), [presented, { ...presented, interactionId: 'another-input' }])).toBeUndefined();
+    expect(interactionForA2uiActivity({ ...activity, interactionId: 'input' }, row('final'),
+      [presented, { ...presented, interactionId: 'another-input' }])).toBe(presented);
+  });
+
+  it('binds a same-surface result without folding it back into the original input', () => {
+    const result = [...official, { version: 'v0.9.1', updateComponents: { surfaceId: 'form', components: [
+      { id: 'root', component: 'Text', text: 'Agent result remains visible' },
+    ] } }];
+    const message = { ...row('final'), aguiActivities: [{ surfaceId: 'form', messages: result }] };
+    const html = render([message], [presented]);
+    expect(html).toContain('data-testid="a2ui-surface"');
+    expect(html).not.toContain('data-testid="a2ui-input-history"');
+    expect(missingSubmittedInputHistory([message], [presented]).get('final')?.[0]?.surfaceIds).toEqual([]);
   });
 });

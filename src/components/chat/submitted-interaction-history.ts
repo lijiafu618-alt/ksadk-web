@@ -19,6 +19,18 @@ function presentationSurfaces(interaction: Interaction): string[] {
   return [...active];
 }
 
+/** Missing transport ids may be recovered only from one same-run presentation. */
+export function interactionForA2uiActivity(
+  activity: { surfaceId: string; interactionId?: string }, message: Message,
+  interactions: readonly Interaction[] = [],
+): Interaction | undefined {
+  if (activity.interactionId) return interactions.find(entry => entry.interactionId === activity.interactionId);
+  const candidates = interactions.filter(entry => entry.runId
+    && (entry.runId === message.runId || entry.runId === message.invocationId)
+    && presentationSurfaces(entry).includes(activity.surfaceId));
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 /** Attach unprojected metadata to its loaded run, independently of virtualization. */
 export function missingSubmittedInputHistory(
   messages: readonly Message[], interactions: readonly Interaction[] = [],
