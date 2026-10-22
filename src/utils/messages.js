@@ -3,6 +3,7 @@ const TOOL_STATUS_MAP = {
   completed: 'completed',
   failed: 'error',
   paused: 'paused',
+  unknown: 'unknown',
   approved: 'completed',
   denied: 'completed',
   rejected: 'completed',

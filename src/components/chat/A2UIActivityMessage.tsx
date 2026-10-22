@@ -1,10 +1,12 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { injectBasicCatalogStyles } from '@a2ui/web_core/v0_9/basic_catalog';
+import { canonicalize } from 'json-canonicalize';
 import { legacyQuestionSummary } from '../../core/run/a2ui.js';
 import { A2uiSurfaces } from '../../core/a2ui/surfaces.js';
 import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { LegacyA2UISurface, legacyCatalogId } from './LegacyA2UISurface';
 import type { Interaction } from '../../core/interaction/types.js';
+import { interactionInputOutcome } from './approval-status.js';
 
 // The official React host extends HTMLElement at module evaluation. Load it
 // only after mounting a real surface so library consumers retain SSR support.
@@ -66,7 +68,36 @@ type Props = {
   boundInteraction?: Interaction;
 };
 
+function surfaceSnapshot(surfaceId: string, messages: Props['messages']): string | undefined {
+  const model = new A2uiSurfaces(() => {});
+  try {
+    model.apply(messages);
+    const surface = model.get(surfaceId);
+    if (!surface) return undefined;
+    return canonicalize({
+      catalogId: surface.defaultCatalog.id,
+      rootId: surface.rootId,
+      theme: surface.theme,
+      metadata: surface.metadata,
+      components: [...surface.componentsModel.getAll().entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([, component]) => component.componentTree),
+      data: surface.dataModel.get('/'),
+    });
+  } catch {
+    // Unknown/incomplete snapshots stay visible; never hide an Agent update.
+    return undefined;
+  } finally { model.dispose(); }
+}
+
 export function A2UIActivityMessage(props: Props) {
+  const outcome = interactionInputOutcome(props.boundInteraction);
+  const requestMessages = props.boundInteraction?.presentation?.a2ui?.messages;
+  const unchangedInput = useMemo(() => {
+    if (!outcome || !requestMessages) return false;
+    const original = surfaceSnapshot(props.surfaceId, requestMessages);
+    return original !== undefined && original === surfaceSnapshot(props.surfaceId, props.messages);
+  }, [outcome, requestMessages, props.surfaceId, props.messages]);
   // The composer owns the active input. Timeline history becomes read-only
   // after consumption, rather than mounting a second interactive copy.
   if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) return null;
@@ -81,6 +112,26 @@ export function A2UIActivityMessage(props: Props) {
       </details>
     );
   }
+  if (outcome && unchangedInput) {
+    const label = outcome === 'submitted' ? '已提交表单'
+      : outcome === 'cancelled' ? '已取消表单' : '已过期表单';
+    return (
+      <details className="mx-auto mb-3 w-full max-w-3xl px-6 text-sm text-muted-foreground" data-testid="a2ui-input-history">
+        <summary className="cursor-pointer">
+          {label} · {props.boundInteraction?.title || '补充信息'}
+        </summary>
+        {props.boundInteraction?.message ? <p className="mt-2">{props.boundInteraction.message}</p> : null}
+        {props.boundInteraction?.responseSummary ? <p className="mt-1" data-testid="a2ui-input-response-summary">{props.boundInteraction.responseSummary}</p> : null}
+        <div className="mt-2" data-testid="a2ui-input-history-snapshot">
+          <A2uiSnapshot {...props} disabled />
+        </div>
+      </details>
+    );
+  }
+  return <A2uiSnapshot {...props} />;
+}
+
+function A2uiSnapshot(props: Props) {
   const created = props.messages.flatMap(message => {
     const create = message.createSurface as { surfaceId?: string; catalogId?: string } | undefined;
     return create?.surfaceId === props.surfaceId ? [create] : [];

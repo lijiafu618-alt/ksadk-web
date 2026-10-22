@@ -98,7 +98,7 @@ function textMessage(item: ConversationItem): Message {
   };
 }
 
-function toolMessage(item: ConversationItem): Message {
+function toolMessage(item: ConversationItem, runEnded = false): Message {
   const toolName = nonEmptyString(item.payload.tool) || (item.payload.sourceKind === 'tool_result' ? 'Tool result' : 'Tool');
   const callId = nonEmptyString(item.payload.callId);
   const args = displayValue(safeToolValue(item.payload.args));
@@ -112,11 +112,14 @@ function toolMessage(item: ConversationItem): Message {
     unknown: 'unknown',
   } as const;
   const explicit = item.payload.executionStatus;
-  const status = typeof explicit === 'string' && Object.hasOwn(executionStatuses, explicit)
+  const executionStatus = typeof explicit === 'string' && Object.hasOwn(executionStatuses, explicit)
     ? executionStatuses[explicit as keyof typeof executionStatuses]
     : item.lifecycle === 'failed' || item.payload.isError === true
       ? 'error'
       : item.lifecycle === 'completed' ? 'completed' : 'running';
+  // A completed containing run is not a tool receipt. Stop the spinner while
+  // preserving uncertainty for a call that never published its own result.
+  const status = runEnded && executionStatus === 'running' ? 'unknown' : executionStatus;
   return {
     ...messageBase(item),
     role: 'model',
@@ -348,7 +351,8 @@ export function projectConversationStreamForHostedUi(
       continue;
     }
     if (toolIds.has(item.itemId)) {
-      messages.push(toolMessage(item));
+      messages.push(toolMessage(item, Boolean(presentation.terminalStatus)
+        && item.runId === result.runId));
       continue;
     }
     if (approvalIds.has(item.itemId) || structuredInputIds.has(item.itemId)) {

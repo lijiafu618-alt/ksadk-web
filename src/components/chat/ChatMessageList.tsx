@@ -14,6 +14,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  CircleHelp,
   Copy,
   Paperclip,
   RefreshCcw,
@@ -48,7 +49,7 @@ import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { A2UIActivityMessage } from './A2UIActivityMessage';
 import { InteractionHistoryAnchor } from './InteractionHistoryAnchor';
 import type { Interaction } from '../../core/interaction/types.js';
-import { interactionApprovalStatus } from './approval-status.js';
+import { interactionApprovalStatus, interactionInputOutcome } from './approval-status.js';
 
 export type ChatMessageListProps = {
   agentName: string;
@@ -804,7 +805,14 @@ function ChatMessage({
       {message.tools
         ? Object.values(message.tools).map((snapshot, toolIndex) => {
           const record = interactionRecords?.find(entry => entry.interactionId === snapshot.approvalRequestId);
-          const tool = { ...snapshot, approvalStatus: interactionApprovalStatus(record) || snapshot.approvalStatus };
+          const inputOutcome = interactionInputOutcome(record);
+          const inputRequest = record?.kind === 'structured_input';
+          const tool = {
+            ...snapshot,
+            status: inputOutcome && snapshot.status === 'paused' ? 'completed' : snapshot.status,
+            approvalStatus: inputOutcome === 'submitted' ? undefined
+              : interactionApprovalStatus(record) || snapshot.approvalStatus,
+          };
           return (
             <details
               key={`${tool.name}-${toolIndex}`}
@@ -829,22 +837,28 @@ function ChatMessage({
                     <ShieldCheck className="h-4 w-4 text-neutral-500" />
                   ) : tool.status === 'error' ? (
                     <XCircle className="h-4 w-4 text-rose-500" />
+                  ) : tool.status === 'unknown' ? (
+                    <CircleHelp className="h-4 w-4 text-slate-400" />
                   ) : (
                     <Check className="h-4 w-4 text-slate-400" />
                   )}
                   <span>
-                    {tool.approvalStatus === 'pending'
-                      ? '等待审批：'
-                      : tool.approvalStatus === 'approved'
-                        ? '已批准：'
-                        : tool.approvalStatus === 'rejected'
-                          ? '已拒绝：'
-                          : tool.approvalStatus === 'cancelled'
-                            ? '已取消：'
+                    {tool.status === 'unknown'
+                      ? '状态未知：'
                       : tool.status === 'error'
                         ? '工具调用失败：'
-                        : '工具调用：'}
-                    {tool.name}
+                        : inputOutcome === 'submitted'
+                          ? '已提交：'
+                          : tool.approvalStatus === 'pending'
+                            ? inputRequest ? '等待填写：' : '等待审批：'
+                            : tool.approvalStatus === 'approved'
+                              ? '已批准：'
+                              : tool.approvalStatus === 'rejected'
+                                ? '已拒绝：'
+                                : tool.approvalStatus === 'cancelled'
+                                  ? '已取消：'
+                                  : '工具调用：'}
+                    {inputRequest ? record.title || '补充信息' : tool.name}
                   </span>
                 </div>
               </summary>
@@ -861,7 +875,9 @@ function ChatMessage({
                 {tool.approvalRequestId ? (
                   <div className="font-sans text-sm text-slate-700 dark:text-slate-200">
                     <div className="font-medium">
-                      {tool.approvalStatus === 'approved'
+                      {inputOutcome === 'submitted'
+                        ? '表单已提交，Agent 已接收。'
+                        : tool.approvalStatus === 'approved'
                         ? '已批准该工具调用。'
                         : tool.approvalStatus === 'rejected'
                           ? '已拒绝该工具调用。'
