@@ -3,12 +3,14 @@ import { jsonValue, type JsonValue } from '../../types/json-value.js';
 import { validateInput } from '../../core/interaction/schema.js';
 import { useImeComposition } from '../../hooks/useImeComposition.js';
 import { schemaFields } from './schema-fields.js';
+import { isSensitiveInputSchema, redactInputResponse } from '../../core/interaction/response-snapshot.js';
 
 type Schema = Record<string, unknown>;
 type FieldProps = {
   schema: Schema; value: JsonValue | undefined; path: string; label: string;
   disabled: boolean; depth: number; onChange: (value: JsonValue | undefined) => void;
   onInvalid: (path: string, invalid: boolean) => void;
+  readOnlySnapshot?: boolean; rootSchema?: Schema;
 };
 const controlClass = 'w-full rounded-md border border-[var(--ksadk-interaction-border)] bg-[var(--ksadk-interaction-control-background)] px-2 py-1.5 text-sm text-foreground';
 const isObject = (value: unknown): value is Record<string, JsonValue> =>
@@ -84,6 +86,14 @@ function JsonEditor({ value, onChange, path, onInvalid, disabled, label }: Field
 function SchemaField(props: FieldProps) {
   const { value, onChange, path, disabled, label, onInvalid, depth } = props;
   const original = props.schema;
+  if (props.readOnlySnapshot && isSensitiveInputSchema(original, props.rootSchema)) {
+    return <div className="space-y-1 text-xs"><label className="block font-medium">{label}</label>
+      <span data-testid={`interaction-field-${path || 'value'}`}>已隐藏</span></div>;
+  }
+  if (props.readOnlySnapshot && value === undefined) {
+    return <div className="space-y-1 text-xs"><label className="block font-medium">{label}</label>
+      <span data-testid={`interaction-field-${path || 'value'}`}>未提供</span></div>;
+  }
   const alternatives = original.anyOf ?? original.oneOf;
   let schema = original;
   let nullable = Array.isArray(original.type) && original.type.includes('null');
@@ -120,6 +130,7 @@ function SchemaField(props: FieldProps) {
         schema={child} value={isObject(value) ? value[name] : undefined}
         path={path ? `${path}/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` : name.replaceAll('~', '~0').replaceAll('/', '~1')} label={`${typeof child.title === 'string' ? child.title : name}${required.includes(name) ? ' *' : ''}`}
         disabled={disabled} depth={depth + 1} onInvalid={onInvalid}
+        readOnlySnapshot={props.readOnlySnapshot} rootSchema={props.rootSchema}
         onChange={next => {
           const entries = Object.entries(isObject(value) ? value : {}).filter(([key]) => key !== name);
           if (next !== undefined) entries.push([name, next]);
@@ -148,6 +159,15 @@ function SchemaField(props: FieldProps) {
     {control}
     {nullable && value !== null ? <button type="button" disabled={disabled} onClick={() => set(null)}>设为 null</button> : null}
   </div>;
+}
+
+/** A consumed answer is display-only; mounting it cannot validate or submit again. */
+export function JsonSchemaInputSnapshot({ schema, value }: { schema: Schema; value: JsonValue }) {
+  return <fieldset disabled inert className="mt-2 space-y-2" data-testid="interaction-input-snapshot">
+    <SchemaField schema={schema} rootSchema={schema} value={redactInputResponse(schema, value)}
+      path="" label={typeof schema.title === 'string' ? schema.title : '已提交内容'}
+      disabled readOnlySnapshot depth={0} onChange={() => {}} onInvalid={() => {}} />
+  </fieldset>;
 }
 
 /** All JSON answers, including scalars and complex schemas, use one submit path. */

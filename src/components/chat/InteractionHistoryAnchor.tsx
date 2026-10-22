@@ -1,5 +1,7 @@
 import { InteractionOutcomeLabel } from './InteractionTray';
 import type { Interaction } from '../../core/interaction/types.js';
+import { submittedResponse } from '../../core/interaction/response-snapshot.js';
+import { JsonSchemaInputSnapshot } from './JsonSchemaInputForm';
 
 function formatTime(value: string | null): string {
   if (!value) return '';
@@ -38,6 +40,7 @@ export function InteractionHistoryAnchor({ interaction }: { interaction: Interac
     interaction.status === 'resolved'
     || interaction.status === 'expired';
   const schemaKeys = requestSchemaKeys(interaction.requestSchema);
+  const submitted = submittedResponse(interaction);
 
   return (
     <div
@@ -81,6 +84,9 @@ export function InteractionHistoryAnchor({ interaction }: { interaction: Interac
                   <span>无结构化参数</span>
                 )}
               </div>
+              {submitted && interaction.requestSchema ? (
+                <JsonSchemaInputSnapshot schema={interaction.requestSchema} value={submitted.value} />
+              ) : null}
             </div>
           </details>
         </>

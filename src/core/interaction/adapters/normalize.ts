@@ -11,6 +11,7 @@ import type {
   InteractionSource,
   InteractionStatus,
 } from '../types.js';
+import { jsonValue, type JsonValue } from '../../../types/json-value.js';
 
 export type RawInteractionFields = {
   interactionId: string;
@@ -29,6 +30,7 @@ export type RawInteractionFields = {
   actor?: unknown;
   outcome?: unknown;
   responseSummary?: unknown;
+  response?: unknown;
   extensions?: Record<string, unknown>;
   source: InteractionSource;
 };
@@ -76,6 +78,10 @@ export function normalizeInteraction(fields: RawInteractionFields): Interaction 
   const outcome = String(fields.outcome || '');
   const presentation = asRecord(fields.presentation);
   const a2ui = presentation ? asRecord(presentation.a2ui) : null;
+  let response: { response: JsonValue } | undefined;
+  if (status === 'resolved' && Object.hasOwn(fields, 'response')) {
+    try { response = { response: jsonValue(fields.response) }; } catch { /* Invalid JSON is unavailable. */ }
+  }
 
   return {
     interactionId: fields.interactionId,
@@ -108,6 +114,7 @@ export function normalizeInteraction(fields: RawInteractionFields): Interaction 
     actor: stringOrNull(fields.actor),
     outcome: (VALID_OUTCOMES.has(outcome) ? outcome : null) as InteractionOutcome | null,
     responseSummary: stringOrNull(fields.responseSummary),
+    ...response,
     source: fields.source,
     extensions: fields.extensions || {},
   };

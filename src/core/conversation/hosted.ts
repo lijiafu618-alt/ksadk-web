@@ -10,6 +10,7 @@ import { safeRuntimeToolOutput, safeToolValue } from './safe-tool-value.js';
 import type { Message } from '../../components/chat/types.js';
 import type { ProcessingBlock } from '../run/blocks.js';
 import type { Interaction } from '../interaction/types.js';
+import { jsonValue } from '../../types/json-value.js';
 import type {
   ConversationItem,
   ConversationStreamResult,
@@ -167,6 +168,10 @@ function interactionFromItem(item: ConversationItem): Interaction | null {
   const prompt = nonEmptyString(item.payload.prompt) || detail;
   const kind = interactionKind(item.payload.interactionKind);
   const completed = item.lifecycle === 'completed';
+  let response: Pick<Interaction, 'response'> = {};
+  if (completed && Object.hasOwn(item.payload, 'response')) {
+    try { response = { response: jsonValue(item.payload.response) }; } catch { /* Invalid JSON is unavailable. */ }
+  }
   return {
     interactionId,
     sessionId: item.sessionId,
@@ -192,6 +197,7 @@ function interactionFromItem(item: ConversationItem): Interaction | null {
     responseSummary: completed
       ? nonEmptyString(item.payload.responseSummary)
       : null,
+    ...response,
     source: 'interaction_v1',
     extensions: {
       conversation_item_id: item.itemId,

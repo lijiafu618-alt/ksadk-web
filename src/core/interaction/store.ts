@@ -149,6 +149,7 @@ export class InteractionStore {
         outcome: interaction.outcome ?? existing.outcome,
         resolvedAt: interaction.resolvedAt ?? existing.resolvedAt,
         responseSummary: interaction.responseSummary ?? existing.responseSummary,
+        ...(Object.hasOwn(existing, 'response') ? { response: existing.response } : {}),
       };
       event = { type: 'interaction_resolved', interaction: next };
     } else {

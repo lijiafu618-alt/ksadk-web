@@ -322,7 +322,9 @@ export class InteractionClientImpl implements InteractionClient {
       status: terminalStatus,
       outcome: ACTION_OUTCOME[input.action],
       actor: 'user',
-      responseSummary: summarizeResponse(input.action, input.response),
+      responseSummary: record.kind === 'structured_input'
+        ? input.action === 'cancel' ? '已取消' : '已提交'
+        : summarizeResponse(input.action, input.response),
       revision: input.expectedRevision,
     });
     // Keep the idempotency key recorded for replay correlation.

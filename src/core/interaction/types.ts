@@ -72,6 +72,8 @@ export type Interaction = {
   outcome: InteractionOutcome | null;
   /** Redacted summary of the submitted response; never raw secrets. */
   responseSummary: string | null;
+  /** Public terminal answer snapshot. Omitted means unavailable; null is a JSON answer. */
+  response?: JsonValue;
   source: InteractionSource;
   extensions: Record<string, unknown>;
 };

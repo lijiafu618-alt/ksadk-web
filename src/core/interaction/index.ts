@@ -28,6 +28,7 @@ export {
 } from './types.js';
 export { InteractionStore } from './store.js';
 export { InteractionClientImpl } from './client.js';
+export { redactInputResponse, isSensitiveInputSchema, submittedResponse } from './response-snapshot.js';
 export type { InteractionClientDeps, SubmitInteractionTransport } from './client.js';
 export { interactionFromSessionEvent } from './adapters/session-events.js';
 export {

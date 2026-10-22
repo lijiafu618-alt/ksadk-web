@@ -7,6 +7,8 @@ import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { LegacyA2UISurface, legacyCatalogId } from './LegacyA2UISurface';
 import type { Interaction } from '../../core/interaction/types.js';
 import { interactionInputOutcome } from './approval-status.js';
+import { submittedResponse } from '../../core/interaction/response-snapshot.js';
+import { projectA2uiHistoryResponse, type A2uiHistoryAnswer } from './a2ui-response-snapshot.js';
 
 // The official React host extends HTMLElement at module evaluation. Load it
 // only after mounting a real surface so library consumers retain SSR support.
@@ -66,12 +68,13 @@ type Props = {
   onAction?: (message: A2UIClientEventMessage) => void;
   disabled?: boolean;
   boundInteraction?: Interaction;
+  historyAnswer?: A2uiHistoryAnswer;
 };
 
 function surfaceSnapshot(surfaceId: string, messages: Props['messages']): string | undefined {
   const model = new A2uiSurfaces(() => {});
   try {
-    model.apply(messages);
+    model.apply(structuredClone(messages));
     const surface = model.get(surfaceId);
     if (!surface) return undefined;
     return canonicalize({
@@ -98,6 +101,12 @@ export function A2UIActivityMessage(props: Props) {
     const original = surfaceSnapshot(props.surfaceId, requestMessages);
     return original !== undefined && original === surfaceSnapshot(props.surfaceId, props.messages);
   }, [outcome, requestMessages, props.surfaceId, props.messages]);
+  const history = useMemo(() => {
+    const accepted = props.boundInteraction && submittedResponse(props.boundInteraction);
+    if (!unchangedInput || !accepted || !props.boundInteraction?.requestSchema) return undefined;
+    return projectA2uiHistoryResponse(props.surfaceId, props.messages,
+      props.boundInteraction.requestSchema, accepted.value);
+  }, [unchangedInput, props.surfaceId, props.messages, props.boundInteraction]);
   // The composer owns the active input. Timeline history becomes read-only
   // after consumption, rather than mounting a second interactive copy.
   if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) return null;
@@ -122,8 +131,13 @@ export function A2UIActivityMessage(props: Props) {
         </summary>
         {props.boundInteraction?.message ? <p className="mt-2">{props.boundInteraction.message}</p> : null}
         {props.boundInteraction?.responseSummary ? <p className="mt-1" data-testid="a2ui-input-response-summary">{props.boundInteraction.responseSummary}</p> : null}
+        {outcome === 'submitted' && !history ? <p className="mt-2">此历史记录没有可恢复的提交值，以下为原始表单。</p> : null}
         <div className="mt-2" data-testid="a2ui-input-history-snapshot">
-          <A2uiSnapshot {...props} disabled />
+          {history && !history.mapped ? <div data-testid="a2ui-input-response-fallback">
+            <p>已提交参数（原卡片没有可确定的输入绑定）：</p>
+            <pre className="whitespace-pre-wrap">{JSON.stringify(history.answer.summary, null, 2)}</pre>
+          </div> : <A2uiSnapshot {...props} messages={history?.messages || props.messages}
+            historyAnswer={history?.legacy ? history.answer : undefined} disabled onAction={undefined} />}
         </div>
       </details>
     );
@@ -138,7 +152,7 @@ function A2uiSnapshot(props: Props) {
   }).at(-1);
   if (created?.catalogId === legacyCatalogId) {
     const model = new A2uiSurfaces(() => {});
-    try { model.apply(props.messages); } catch {
+    try { model.apply(structuredClone(props.messages)); } catch {
       return <div role="alert">旧版卡片未通过兼容目录校验。</div>;
     } finally { model.dispose(); }
     return <LegacyA2UISurface {...props} disabled={Boolean(props.disabled || !props.onAction)} onAction={props.onAction || (() => {})} />;
