@@ -12,3 +12,35 @@ export function mergeHistoryToolFacts(previous: ToolFacts, incoming: ToolFacts):
     status: terminal(previous.status) && !terminal(incoming.status) ? previous.status : incoming.status,
   };
 }
+
+/** Compatibility message pages may repeat the same cumulative call snapshot. */
+export function coalesceHistoryToolCalls(messages: Message[]): Message[] {
+  const mapped = messages.map(message => ({ ...message,
+    tools: message.tools ? { ...message.tools } : undefined,
+  }));
+  const owners = new Map<string, { message: Message; key: string }>();
+  let changed = false;
+  for (const message of [...mapped].sort((a, b) => (a.historyOrder?.seq ?? 0) - (b.historyOrder?.seq ?? 0))) {
+    // Canonical item identities are owned by the conversation projection.
+    if (message.itemId || !message.invocationId) continue;
+    for (const [key, tool] of Object.entries(message.tools || {})) {
+      if (!tool.callId || tool.approvalRequestId) continue;
+      const identity = JSON.stringify([message.invocationId, message.scopeId || '', tool.callId]);
+      const previous = owners.get(identity);
+      if (!previous) {
+        owners.set(identity, { message, key });
+        continue;
+      }
+      const earlier = previous.message.tools![previous.key];
+      const merged = { ...earlier, ...tool, ...mergeHistoryToolFacts(earlier, tool) };
+      previous.message.tools![previous.key] = merged;
+      previous.message.blocks = previous.message.blocks?.map(block => block.type === 'tool'
+        && block.extra?.callId === tool.callId
+        ? { ...block, args: merged.args, output: merged.output, status: merged.status } : block);
+      delete message.tools![key];
+      message.blocks = message.blocks?.filter(block => block.type !== 'tool' || block.extra?.callId !== tool.callId);
+      changed = true;
+    }
+  }
+  return changed ? mapped : messages;
+}

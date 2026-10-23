@@ -144,4 +144,29 @@ describe('tool call identity across cumulative and partial history', () => {
     expect(calls(output)).toMatchObject([{ status: 'completed', output: expected }]);
     expect(callBlocks(output)).toMatchObject([{ status: 'completed', output: expected }]);
   });
+
+  it('coalesces a cumulative call whose assistant snapshots arrive on separate message pages', () => {
+    const original = records.find(row => row.Content?.runtime_event?.item_kind === 'tool_call'
+      && row.Content?.runtime_event?.event_type === 'item.completed')!;
+    const frame = original.Content!.runtime_event!;
+    const part = (frame.snapshot as { parts: Array<{ call_id: string; name: string }> }).parts[0];
+    const row = (seq: number, content: string) => ({
+      MessageId: `reply-${seq}`, Role: 'assistant', InvocationId: 'run-1', SeqId: seq,
+      Content: { text: content },
+      ToolEvents: [{ Name: part.name, ToolCallId: part.call_id, Result: 42, Status: 'completed' }],
+    });
+    // loadOlderMessages maps each page independently before joining its fallback cache.
+    const fallback = [...mapBackendMessages([row(10, 'Progress.')]), ...mapBackendMessages([row(30, 'Done.')])] as Message[];
+    const before = JSON.stringify(fallback);
+    const event = { ...original, EventType: 'item.started', Content: { runtime_event: {
+      ...frame, event_type: 'item.started', snapshot: undefined, initial: frame.snapshot,
+    } } };
+    const output = rebuildPersistedSessionHistory(fallback, [event], 'example-session');
+    expect(output.messages.map(message => message.content)).toEqual(['Progress.', 'Done.']);
+    expect(calls(output.messages)).toHaveLength(1);
+    expect(callBlocks(output.messages)).toHaveLength(1);
+    expect(calls(output.messages)).toMatchObject([{ status: 'completed', output: '42' }]);
+    expect(JSON.stringify(fallback)).toBe(before);
+    expect(calls(rebuildPersistedSessionHistory(output.messages, [event], 'example-session').messages)).toHaveLength(1);
+  });
 });

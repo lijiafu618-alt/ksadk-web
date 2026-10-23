@@ -217,31 +217,10 @@ export function mapBackendMessages(messages) {
   // carry the same call. Keep its first position and its latest recorded facts.
   // A name alone never identifies a call, and calls from different runs/scopes
   // must remain independent.
-  const mapped = messages.map(mapBackendMessage);
-  const owners = new Map();
-  for (const message of [...mapped].sort((a, b) => (a.historyOrder?.seq ?? 0) - (b.historyOrder?.seq ?? 0))) {
-    if (!message.invocationId) continue;
-    for (const [key, tool] of Object.entries(message.tools || {})) {
-      if (!tool.callId || tool.approvalRequestId) continue;
-      const identity = JSON.stringify([message.invocationId, message.scopeId || '', tool.callId]);
-      const previous = owners.get(identity);
-      if (!previous) {
-        owners.set(identity, { message, key });
-        continue;
-      }
-      const earlier = previous.message.tools[previous.key];
-      const merged = { ...earlier, ...tool, ...mergeHistoryToolFacts(earlier, tool) };
-      previous.message.tools[previous.key] = merged;
-      previous.message.blocks = previous.message.blocks?.map(block => block.type === 'tool'
-        && block.extra?.callId === tool.callId
-        ? { ...block, args: merged.args, output: merged.output, status: merged.status } : block);
-      delete message.tools[key];
-      message.blocks = message.blocks?.filter(block => block.type !== 'tool' || block.extra?.callId !== tool.callId);
-    }
-  }
+  const mapped = coalesceHistoryToolCalls(messages.map(mapBackendMessage));
   return coalesceA2uiActivities(mapped.flatMap((message, index) => [message, ...mapBackendActivities(messages[index])]));
 }
 import { coalesceA2uiActivities } from '../core/a2ui/transcript.js';
 import { normalizeA2uiOperations } from '../core/run/a2ui.js';
 import { buildBlocksFromHistory } from '../core/run/blocks.js';
-import { mergeHistoryToolFacts } from './history-tool-facts.js';
+import { coalesceHistoryToolCalls } from './history-tool-facts.js';

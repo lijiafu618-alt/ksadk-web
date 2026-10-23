@@ -4,7 +4,7 @@ import { projectConversationItems } from '../core/conversation/presentation.js';
 import { projectConversationStreamForHostedUi } from '../core/conversation/hosted.js';
 import type { Message } from '../components/chat/types.js';
 import { buildBlocksFromHistory } from '../core/run/blocks.js';
-import { mergeHistoryToolFacts } from './history-tool-facts.js';
+import { coalesceHistoryToolCalls, mergeHistoryToolFacts } from './history-tool-facts.js';
 import {
   KernelRunEventTranslator,
   type KernelSessionEventFrame,
@@ -331,6 +331,9 @@ export function rebuildPersistedSessionHistory(
   canonicalRunIds: string[];
   translatedEvents: SessionEventRecord[];
 } {
+  // Older message pages are mapped separately before joining this cache.
+  // Reconcile their cumulative snapshots again without mutating cached rows.
+  fallbackMessages = coalesceHistoryToolCalls(fallbackMessages);
   const translator = new KernelRunEventTranslator(sessionId);
   const translatedEvents: SessionEventRecord[] = [];
   const canonicalRunIds = new Set<string>();
