@@ -4,6 +4,7 @@ import { projectConversationItems } from '../core/conversation/presentation.js';
 import { projectConversationStreamForHostedUi } from '../core/conversation/hosted.js';
 import type { Message } from '../components/chat/types.js';
 import { buildBlocksFromHistory } from '../core/run/blocks.js';
+import { mergeHistoryToolFacts } from './history-tool-facts.js';
 import {
   KernelRunEventTranslator,
   type KernelSessionEventFrame,
@@ -194,29 +195,55 @@ function enrichPartialCanonicalRun(
   canonical: Message[],
 ): Message[] {
   const partialModels = canonical.filter((message) => message.role === 'model');
-  const partialTools = partialModels.reduce<NonNullable<Message['tools']>>(
-    (tools, message) => ({ ...tools, ...(message.tools || {}) }),
-    {},
-  );
+  const partialTools = partialModels.flatMap(message => Object.values(message.tools || {})
+    .map(tool => ({ tool, scope: message.scopeId })));
+  const matching = (callId: string | undefined, scope: string | undefined) => {
+    if (!callId) return undefined;
+    const candidates = partialTools.filter(entry => entry.tool.callId === callId
+      && (!scope || entry.scope === scope));
+    // Legacy cumulative rows may omit scope. Match only an unambiguous call.
+    return candidates.length === 1 ? candidates[0].tool : undefined;
+  };
+  const additionalTools = partialTools.filter(entry => !fallback.some(message =>
+    Object.values(message.tools || {}).some(tool => tool.callId
+      && matching(tool.callId, message.scopeId) === entry.tool)));
   const partialReasoning = partialModels
     .map((message) => String(message.reasoning || '').trim())
     .filter(Boolean)
     .join('\n\n');
   const target = [...fallback].reverse().find((message) => message.role === 'model');
-  if (!target || (Object.keys(partialTools).length === 0 && !partialReasoning)) {
+  if (!target || (partialTools.length === 0 && !partialReasoning)) {
     return fallback;
   }
-  return fallback.map((message) => (
-    message === target
-      ? withHistoryBlocks({
-          ...message,
-          reasoning: message.reasoning || partialReasoning || undefined,
-          tools: Object.keys(partialTools).length > 0
-            ? { ...(message.tools || {}), ...partialTools }
-            : message.tools,
-        })
-      : message
-  ));
+  return fallback.map(message => {
+    const tools = Object.fromEntries(Object.entries(message.tools || {}).map(([key, tool]) => {
+      const update = matching(tool.callId, message.scopeId);
+      return [key, update ? { ...tool, ...update, ...mergeHistoryToolFacts(tool, update), name: tool.name } : tool];
+    }));
+    const added = message === target ? additionalTools : [];
+    for (const { tool, scope } of added) {
+      const key = !tools[tool.name] ? tool.name : JSON.stringify([scope || '', tool.callId || tool.name]);
+      tools[key] = tool;
+    }
+    const blocks = message.blocks?.map(block => {
+      if (block.type !== 'tool') return block;
+      const id = block.extra?.callId;
+      const update = typeof id === 'string' ? matching(id, message.scopeId) : undefined;
+      return update ? { ...block, ...mergeHistoryToolFacts(block, update) } : block;
+    });
+    // Retain the persisted interleaving; only genuinely new calls need blocks.
+    const addedBlocks = buildBlocksFromHistory({ tools: Object.fromEntries(added.map(({ tool, scope }) =>
+      [JSON.stringify([scope || '', tool.callId || tool.name]), tool])) });
+    const firstText = blocks?.findIndex(block => block.type === 'text') ?? -1;
+    return withHistoryBlocks({
+      ...message,
+      ...(message === target ? { reasoning: message.reasoning || partialReasoning || undefined } : {}),
+      tools: Object.keys(tools).length ? tools : message.tools,
+      blocks: blocks && addedBlocks.length
+        ? [...blocks.slice(0, firstText < 0 ? blocks.length : firstText), ...addedBlocks,
+            ...blocks.slice(firstText < 0 ? blocks.length : firstText)] : blocks,
+    });
+  });
 }
 
 /**

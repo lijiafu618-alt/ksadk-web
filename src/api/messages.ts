@@ -50,6 +50,7 @@ export type BackendMessage = {
   Timestamp?: string;
   SeqId?: number;
   InvocationId?: string;
+  ScopeId?: string;
   ResponseId?: string;
 };
 

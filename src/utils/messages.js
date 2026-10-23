@@ -79,6 +79,7 @@ function mapToolEvents(toolEvents) {
       if (te.ApprovalLevel) entry.approvalLevel = String(te.ApprovalLevel);
     }
     if (te.ToolCallId) {
+      entry.callId = te.ToolCallId;
       entry.previousResponseId = te.ToolCallId;
     }
     // 同名多次时按调用/审批 ID 分键；单工具保持 name 键兼容。
@@ -129,7 +130,7 @@ function mapPersistedBlocks(blocks) {
       args: stringifyBlockValue(block?.Args),
       ...(block?.Result !== undefined ? { output: stringifyBlockValue(block.Result) } : {}),
       status,
-      ...(block?.ToolCallId ? { extra: { previousResponseId: String(block.ToolCallId) } } : {}),
+      ...(block?.ToolCallId ? { extra: { callId: String(block.ToolCallId), previousResponseId: String(block.ToolCallId) } } : {}),
     }];
   });
 }
@@ -163,6 +164,7 @@ export function mapBackendMessage(msg) {
   // 反馈控件需要 responseId/eventId/traceId/rootSpanId(后端从 event Metadata 投出)
   if (msg.MessageId) result.eventId = msg.MessageId;
   if (msg.InvocationId) result.invocationId = msg.InvocationId;
+  if (msg.ScopeId) result.scopeId = msg.ScopeId;
   if (msg.ResponseId) result.responseId = msg.ResponseId;
   if (msg.TraceId) result.traceId = msg.TraceId;
   if (msg.RootSpanId) result.rootSpanId = msg.RootSpanId;
@@ -211,8 +213,35 @@ function mapBackendActivities(msg) {
 }
 
 export function mapBackendMessages(messages) {
-  return coalesceA2uiActivities(messages.flatMap((message) => [mapBackendMessage(message), ...mapBackendActivities(message)]));
+  // Messages are cumulative compatibility snapshots: two assistant rows may
+  // carry the same call. Keep its first position and its latest recorded facts.
+  // A name alone never identifies a call, and calls from different runs/scopes
+  // must remain independent.
+  const mapped = messages.map(mapBackendMessage);
+  const owners = new Map();
+  for (const message of [...mapped].sort((a, b) => (a.historyOrder?.seq ?? 0) - (b.historyOrder?.seq ?? 0))) {
+    if (!message.invocationId) continue;
+    for (const [key, tool] of Object.entries(message.tools || {})) {
+      if (!tool.callId || tool.approvalRequestId) continue;
+      const identity = JSON.stringify([message.invocationId, message.scopeId || '', tool.callId]);
+      const previous = owners.get(identity);
+      if (!previous) {
+        owners.set(identity, { message, key });
+        continue;
+      }
+      const earlier = previous.message.tools[previous.key];
+      const merged = { ...earlier, ...tool, ...mergeHistoryToolFacts(earlier, tool) };
+      previous.message.tools[previous.key] = merged;
+      previous.message.blocks = previous.message.blocks?.map(block => block.type === 'tool'
+        && block.extra?.callId === tool.callId
+        ? { ...block, args: merged.args, output: merged.output, status: merged.status } : block);
+      delete message.tools[key];
+      message.blocks = message.blocks?.filter(block => block.type !== 'tool' || block.extra?.callId !== tool.callId);
+    }
+  }
+  return coalesceA2uiActivities(mapped.flatMap((message, index) => [message, ...mapBackendActivities(messages[index])]));
 }
 import { coalesceA2uiActivities } from '../core/a2ui/transcript.js';
 import { normalizeA2uiOperations } from '../core/run/a2ui.js';
 import { buildBlocksFromHistory } from '../core/run/blocks.js';
+import { mergeHistoryToolFacts } from './history-tool-facts.js';

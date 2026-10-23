@@ -182,6 +182,52 @@ export function ConnectedMessageList({
     }
   }, [messages, scrollToBottom]);
 
+  const loadOlderHistory = useCallback((revealOlder = false) => {
+    const scroller = scrollRef.current;
+    if (!scroller || !currentSessionId || !currentMessageHistory?.hasMore
+      || currentMessageHistory.isLoadingOlder || loadingOlderRef.current
+      || !onLoadOlderSessionMessages) return;
+    const previousScrollHeight = scroller.scrollHeight;
+    const requestedSessionId = currentSessionId;
+    const requestToken = Symbol(requestedSessionId);
+    loadingOlderRef.current = true;
+    olderLoadTokenRef.current = requestToken;
+    if (revealOlder) {
+      stickToBottomRef.current = false;
+      userDetachedFromBottomRef.current = true;
+    }
+    void onLoadOlderSessionMessages(requestedSessionId)
+      .then(() => {
+        if (!ownsOlderMessageScrollRequest({
+          requestedSessionId,
+          activeSessionId: useSessionStore.getState().currentSessionId,
+          requestToken,
+          activeRequestToken: olderLoadTokenRef.current,
+        })) return;
+        requestAnimationFrame(() => {
+          if (!ownsOlderMessageScrollRequest({
+            requestedSessionId,
+            activeSessionId: useSessionStore.getState().currentSessionId,
+            requestToken,
+            activeRequestToken: olderLoadTokenRef.current,
+          })) return;
+          const nextScroller = scrollRef.current;
+          if (!nextScroller) return;
+          const delta = nextScroller.scrollHeight - previousScrollHeight;
+          if (revealOlder) nextScroller.scrollTop = 0;
+          else nextScroller.scrollTop += delta;
+          previousScrollTopRef.current = nextScroller.scrollTop;
+          nextScroller.dispatchEvent(new Event('scroll'));
+        });
+      })
+      .finally(() => {
+        if (olderLoadTokenRef.current === requestToken) {
+          olderLoadTokenRef.current = null;
+          loadingOlderRef.current = false;
+        }
+      });
+  }, [currentMessageHistory, currentSessionId, onLoadOlderSessionMessages]);
+
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
@@ -202,39 +248,7 @@ export function ConnectedMessageList({
         !loadingOlderRef.current &&
         onLoadOlderSessionMessages
       ) {
-        const previousScrollHeight = scroller.scrollHeight;
-        const requestedSessionId = currentSessionId;
-        const requestToken = Symbol(requestedSessionId);
-        loadingOlderRef.current = true;
-        olderLoadTokenRef.current = requestToken;
-        void onLoadOlderSessionMessages(requestedSessionId)
-          .then(() => {
-            if (!ownsOlderMessageScrollRequest({
-              requestedSessionId,
-              activeSessionId: useSessionStore.getState().currentSessionId,
-              requestToken,
-              activeRequestToken: olderLoadTokenRef.current,
-            })) return;
-            requestAnimationFrame(() => {
-              if (!ownsOlderMessageScrollRequest({
-                requestedSessionId,
-                activeSessionId: useSessionStore.getState().currentSessionId,
-                requestToken,
-                activeRequestToken: olderLoadTokenRef.current,
-              })) return;
-              const nextScroller = scrollRef.current;
-              if (!nextScroller) return;
-              const delta = nextScroller.scrollHeight - previousScrollHeight;
-              nextScroller.scrollTop += delta;
-              previousScrollTopRef.current = nextScroller.scrollTop;
-            });
-          })
-          .finally(() => {
-            if (olderLoadTokenRef.current === requestToken) {
-              olderLoadTokenRef.current = null;
-              loadingOlderRef.current = false;
-            }
-          });
+        loadOlderHistory();
       }
 
       if (isStreamingRef.current && scrolledUp) {
@@ -256,7 +270,7 @@ export function ConnectedMessageList({
     updateStickiness();
     scroller.addEventListener('scroll', updateStickiness, { passive: true });
     return () => scroller.removeEventListener('scroll', updateStickiness);
-  }, [currentMessageHistory, currentSessionId, onLoadOlderSessionMessages]);
+  }, [currentMessageHistory, currentSessionId, loadOlderHistory, onLoadOlderSessionMessages]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -405,6 +419,16 @@ export function ConnectedMessageList({
       )}
       {currentMessageHistory?.preparing && (
         <div role="status" data-testid="history-preparing" className="mx-auto w-full max-w-3xl px-6 py-2 text-sm">历史正在准备，请稍候。</div>
+      )}
+      {currentMessageHistory?.hasMore && onLoadOlderSessionMessages && !isLoadingInitialHistory && (
+        <div className="mx-auto w-full max-w-3xl px-6 py-2 text-center">
+          <button type="button" data-testid="history-load-older"
+            className="text-sm text-text-secondary underline disabled:opacity-50"
+            disabled={currentMessageHistory.isLoadingOlder || currentMessageHistory.preparing}
+            onClick={() => loadOlderHistory(true)}>
+            {currentMessageHistory.isLoadingOlder || currentMessageHistory.preparing ? '正在加载…' : '加载更早的消息'}
+          </button>
+        </div>
       )}
       <ChatMessageList
         revealMessage={revealMessage}

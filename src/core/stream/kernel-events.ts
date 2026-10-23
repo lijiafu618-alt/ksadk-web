@@ -239,6 +239,7 @@ export class KernelRunEventTranslator {
       const parts = frameParts(frame, 'initial');
       if (frame.item_kind === 'tool_call') {
         const call = toolCallPart(parts);
+        if (!call) return null;
         const callId = call?.callId || String(frame.item_id || '');
         const name = call?.name || 'tool';
         if (callId) this.toolNameByCallId.set(callId, name);
