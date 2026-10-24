@@ -227,6 +227,11 @@ export class KernelRunEventTranslator {
     }
 
     if (family !== 'runtime') return null;
+    const metadata = asRecord(asRecord(frame.source)?.metadata);
+    const visibility = metadata?.conversation_visibility ?? metadata?.visibility;
+    if (eventType.startsWith('item.') && ['internal', 'hidden'].includes(String(visibility))) {
+      return null;
+    }
 
     const runStatus = RUN_STATUS_BY_EVENT_TYPE[eventType];
     if (runStatus) {
