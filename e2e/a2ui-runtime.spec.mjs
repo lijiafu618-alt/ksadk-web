@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -56,6 +56,7 @@ async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
     '--factory', '--host', '0.0.0.0', '--port', '8080');
   const processHandle = spawn(dockerImage ? 'docker' : runtimePython, dockerImage ? dockerArgs : localArgs,
     { cwd: runtimeAppDir, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+  const childClosed = new Promise(resolve => processHandle.once('close', resolve));
   processHandle.stdout.pipe(log, { end: false });
   processHandle.stderr.pipe(log, { end: false });
   async function stop() {
@@ -67,7 +68,7 @@ async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
         catch { /* Nothing remains to clean up. */ }
       }
     }
-    if (processHandle.exitCode === null && processHandle.pid) {
+    if (processHandle.exitCode === null && processHandle.signalCode === null && processHandle.pid) {
       const exited = new Promise(resolve => processHandle.once('exit', resolve));
       processHandle.kill('SIGTERM');
       const timer = setTimeout(() => processHandle.kill('SIGKILL'), 5000);
@@ -76,11 +77,35 @@ async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
     }
     // Docker's attach pipes can remain open after its client has exited.
     // Release only this stopped runtime's streams so the test worker exits.
+    const streamsClosed = [processHandle.stdout, processHandle.stderr, log].map(stream =>
+      stream.closed ? Promise.resolve() : new Promise((resolve, reject) => {
+        stream.once('close', resolve);
+        stream.once('error', reject);
+      }));
     processHandle.stdout.unpipe(log);
     processHandle.stderr.unpipe(log);
     processHandle.stdout.destroy();
     processHandle.stderr.destroy();
-    log.end();
+    if (!log.writableEnded) log.end();
+    await Promise.all([childClosed, ...streamsClosed]);
+    processHandle.unref();
+    if (process.env.KSADK_TEST_LIFECYCLE_DIAGNOSTICS) {
+      await new Promise(resolve => setImmediate(resolve));
+      appendFileSync(process.env.KSADK_TEST_LIFECYCLE_DIAGNOSTICS, JSON.stringify({
+        phase: 'runtime-stopped', containerName, pid: processHandle.pid,
+        exitCode: processHandle.exitCode, signalCode: processHandle.signalCode,
+        childHandlePresent: Boolean(processHandle._handle),
+        childHandleReferenced: processHandle._handle?.hasRef?.(),
+        stdoutDestroyed: processHandle.stdout.destroyed,
+        stderrDestroyed: processHandle.stderr.destroyed, logClosed: log.closed,
+        activeHandles: process._getActiveHandles().map(handle => ({
+          type: handle.constructor.name, pid: handle.pid,
+          exitCode: handle.exitCode, signalCode: handle.signalCode,
+          referenced: handle.hasRef?.() ?? handle._handle?.hasRef?.(),
+          fd: handle.fd, destroyed: handle.destroyed,
+        })),
+      }) + '\n');
+    }
   }
   let output = '';
   let address;
