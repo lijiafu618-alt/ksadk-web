@@ -7,8 +7,8 @@
  * falls back to plain approve/reject/text controls. A validation failure
  * is never mapped to an approval.
  */
-import type { A2uiPresentation } from './types.js';
-import { catalogDigest } from '../a2ui/catalog.js';
+import type { A2uiPresentation, Interaction } from './types.js';
+import { a2uiCatalog, catalogDigest } from '../a2ui/catalog.js';
 import { A2uiSurfaces } from '../a2ui/surfaces.js';
 
 export const A2UI_WIRE_VERSION = '0.9.1';
@@ -68,4 +68,11 @@ function hasUsableSchema(presentation: A2uiPresentation): boolean {
       ?? (message as { schema?: unknown }).schema;
     return typeof schema === 'object' && schema !== null;
   });
+}
+
+
+/** Approval details always use this renderer's pinned catalog, live or restored. */
+export function validatedApprovalA2ui(interaction: Pick<Interaction, 'kind' | 'presentation'>): A2uiPresentation | null {
+  const a2ui = interaction.kind === 'approval' ? interaction.presentation?.a2ui : null;
+  return a2ui && validateA2uiPresentation(a2ui, a2uiCatalog) === 'a2ui' ? a2ui : null;
 }

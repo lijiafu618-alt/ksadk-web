@@ -83,3 +83,31 @@ test('switching pending interactions does not inherit another form draft', async
   await expect(page.getByLabel('city', { exact: true })).toHaveValue('initial');
   expect(await page.evaluate(() => window.rendererProbe.actions)).toEqual([]);
 });
+
+
+test('restored approval presentation needs no live Activity and keeps one action entry', async ({ page }) => {
+  await page.evaluate(messages => window.rendererProbe.approval(messages, false), [create(), components([
+    { id: 'plan', component: 'Card', body: 'Persisted operation details' }, { id: 'bar', component: 'ApprovalBar' },
+  ])]);
+  await expect(page.getByText('Persisted operation details', { exact: true })).toHaveCount(1);
+  const preview = page.getByTestId('interaction-approval-preview');
+  await expect(preview.getByRole('button', { name: '批准', exact: true })).toBeDisabled();
+  await expect(preview.getByRole('button', { name: '拒绝', exact: true })).toBeDisabled();
+  await expect(page.getByTestId('interaction-approve')).toHaveCount(1);
+  await page.getByTestId('interaction-reject').click();
+  expect(await page.evaluate(() => window.rendererProbe.actions)).toMatchObject([{ action: 'reject' }]);
+});
+
+
+test('a short history page with only an A2UI Activity still renders the approval snapshot', async ({ page }) => {
+  await page.evaluate(messages => window.rendererProbe.approvalHistoryOnly(messages), [create(), components([
+    { id: 'plan', component: 'Card', body: 'Only Activity approval plan' }, { id: 'bar', component: 'ApprovalBar' },
+  ])]);
+  const anchor = page.getByTestId('interaction-history-anchor');
+  await expect(anchor).toHaveCount(1);
+  await anchor.locator('summary').click();
+  await expect(anchor.getByText('Only Activity approval plan', { exact: true })).toBeVisible();
+  await expect(page.getByText('Only Activity approval plan', { exact: true })).toHaveCount(1);
+  await expect(anchor.getByRole('button', { name: '批准', exact: true })).toBeDisabled();
+  await expect(anchor.getByRole('button', { name: '拒绝', exact: true })).toBeDisabled();
+});

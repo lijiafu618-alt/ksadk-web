@@ -1,6 +1,8 @@
 import { InteractionOutcomeLabel } from './InteractionTray';
 import type { Interaction } from '../../core/interaction/types.js';
 import { submittedResponse } from '../../core/interaction/response-snapshot.js';
+import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
+import { InteractionA2uiSurface } from './InteractionA2uiSurface';
 import { JsonSchemaInputSnapshot } from './JsonSchemaInputForm';
 
 function formatTime(value: string | null): string {
@@ -41,6 +43,7 @@ export function InteractionHistoryAnchor({ interaction }: { interaction: Interac
     || interaction.status === 'expired';
   const schemaKeys = requestSchemaKeys(interaction.requestSchema);
   const submitted = submittedResponse(interaction);
+  const approvalPreview = validatedApprovalA2ui(interaction);
 
   return (
     <div
@@ -84,6 +87,11 @@ export function InteractionHistoryAnchor({ interaction }: { interaction: Interac
                   <span>无结构化参数</span>
                 )}
               </div>
+              {approvalPreview ? (
+                <div data-testid="interaction-approval-history-preview">
+                  <InteractionA2uiSurface a2ui={approvalPreview} disabled onSubmit={() => {}} onCancel={() => {}} />
+                </div>
+              ) : null}
               {submitted && interaction.requestSchema ? (
                 <JsonSchemaInputSnapshot schema={interaction.requestSchema} value={submitted.value} />
               ) : null}

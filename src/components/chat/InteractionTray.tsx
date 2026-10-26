@@ -17,6 +17,7 @@ import type {
 } from '../../core/interaction/types.js';
 import {
   validateA2uiPresentation,
+  validatedApprovalA2ui,
   type A2uiRenderMode,
 } from '../../core/interaction/a2ui-validate.js';
 import { interactionIdempotencyKey } from '../../core/interaction/types.js';
@@ -144,6 +145,7 @@ export function InteractionTray({
   const expired = isExpired(active);
   const submitError = readSubmitError(active);
   const summary = approvalSummary(active);
+  const approvalPreview = validatedApprovalA2ui(active);
   const disabled = expired || active.status === 'resolving' || ['resolved', 'cancelled', 'expired'].includes(active.status);
   const presentationMode = validateA2uiPresentation(
     active.presentation?.a2ui,
@@ -293,6 +295,18 @@ export function InteractionTray({
             提交失败（{submitError.code}）：{submitError.message}
             {submitError.retryable ? '，可重试。' : ''}
           </p>
+        ) : null}
+
+        {approvalPreview ? (
+          <div data-testid="interaction-approval-preview">
+            <InteractionA2uiSurface
+              key={JSON.stringify([active.sessionId, active.interactionId, active.revision])}
+              a2ui={approvalPreview}
+              disabled
+              onSubmit={() => {}}
+              onCancel={() => {}}
+            />
+          </div>
         ) : null}
 
         {mode === 'a2ui' && active.presentation?.a2ui ? (

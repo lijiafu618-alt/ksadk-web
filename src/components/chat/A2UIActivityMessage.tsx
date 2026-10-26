@@ -5,6 +5,7 @@ import { legacyQuestionSummary } from '../../core/run/a2ui.js';
 import { A2uiSurfaces } from '../../core/a2ui/surfaces.js';
 import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { LegacyA2UISurface, legacyCatalogId } from './LegacyA2UISurface';
+import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
 import type { Interaction } from '../../core/interaction/types.js';
 import { interactionInputOutcome } from './approval-status.js';
 import { submittedResponse } from '../../core/interaction/response-snapshot.js';
@@ -96,19 +97,22 @@ function surfaceSnapshot(surfaceId: string, messages: Props['messages']): string
 export function A2UIActivityMessage(props: Props) {
   const outcome = interactionInputOutcome(props.boundInteraction);
   const requestMessages = props.boundInteraction?.presentation?.a2ui?.messages;
-  const unchangedInput = useMemo(() => {
-    if (!outcome || !requestMessages) return false;
+  const unchangedPresentation = useMemo(() => {
+    if ((!outcome && props.boundInteraction?.kind !== 'approval') || !requestMessages) return false;
     const original = surfaceSnapshot(props.surfaceId, requestMessages);
     return original !== undefined && original === surfaceSnapshot(props.surfaceId, props.messages);
-  }, [outcome, requestMessages, props.surfaceId, props.messages]);
+  }, [outcome, props.boundInteraction?.kind, requestMessages, props.surfaceId, props.messages]);
+  const unchangedInput = Boolean(outcome && unchangedPresentation);
   const history = useMemo(() => {
     const accepted = props.boundInteraction && submittedResponse(props.boundInteraction);
     if (!unchangedInput || !accepted || !props.boundInteraction?.requestSchema) return undefined;
     return projectA2uiHistoryResponse(props.surfaceId, props.messages,
       props.boundInteraction.requestSchema, accepted.value);
   }, [unchangedInput, props.surfaceId, props.messages, props.boundInteraction]);
-  // The composer owns input controls, but approval controls there do not
-  // render the Agent's operation details. Keep that presentation read-only.
+  // Saved approval details live in the tray or terminal history anchor. Keep
+  // old Activity-only previews and later Agent result updates independently.
+  if (props.boundInteraction?.kind === 'approval'
+    && validatedApprovalA2ui(props.boundInteraction) && unchangedPresentation) return null;
   if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) {
     return props.boundInteraction.kind === 'approval'
       ? <A2uiSnapshot {...props} disabled onAction={undefined} /> : null;

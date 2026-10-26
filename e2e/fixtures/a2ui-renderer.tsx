@@ -1,3 +1,5 @@
+import { createRef } from 'react';
+import { ChatMessageList } from '../../src/components/chat/ChatMessageList.js';
 import { createRoot } from 'react-dom/client';
 import { LegacyA2UISurface } from '../../src/components/chat/LegacyA2UISurface.js';
 import { A2UIActivityMessage } from '../../src/components/chat/A2UIActivityMessage.js';
@@ -26,12 +28,20 @@ const probe = {
     root.render(<InteractionA2uiSurface a2ui={presentation(messages)} disabled={false}
       onSubmit={value => { probe.actions.push(value); }} onCancel={() => { probe.actions.push('cancel'); }} />);
   },
-  approval(messages: Messages) {
+  approval(messages: Messages, withActivity = true) {
     const active = record(messages, 'approval', 'approval');
-    root.render(<><A2UIActivityMessage surfaceId="s" messages={messages} boundInteraction={active}
-      onAction={action => { probe.actions.push(action); }} />
+    root.render(<>{withActivity ? <A2UIActivityMessage surfaceId="s" messages={messages} boundInteraction={active}
+      onAction={action => { probe.actions.push(action); }} /> : null}
     <InteractionTray interactions={[active]} activeIndex={0} onSelectIndex={() => {}}
       onRespond={action => { probe.actions.push(action); }} localCatalog={a2uiCatalog} /></>);
+  },
+  approvalHistoryOnly(messages: Messages) {
+    const interaction = { ...record(messages, 'approval-history', 'approval'), status: 'resolved' as const, outcome: 'approved' };
+    root.render(<ChatMessageList agentName="Review" isMobile={false} isStreaming={false} activity={null} contextIndicator={null}
+      messages={[{ id: 'only-activity', runId: 'run', role: 'a2ui', content: '', timestamp: 1,
+        aguiActivity: { surfaceId: 's', messages, interactionId: interaction.interactionId } }]}
+      interactionRecords={[interaction]} scrollRef={createRef()} onOpenAttachmentPreview={() => {}}
+      onRespondToApproval={() => {}} onSubmitFeedback={() => {}} onDeleteFeedback={() => {}} />);
   },
   input(messages: Messages, interactionId: string) {
     root.render(<InteractionTray interactions={[record(messages, interactionId, 'structured_input')]}

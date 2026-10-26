@@ -1,3 +1,4 @@
+import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
 import type { Interaction } from '../../core/interaction/types.js';
 import { submittedResponse } from '../../core/interaction/response-snapshot.js';
 import type { Message } from './types.js';
@@ -68,19 +69,21 @@ export function missingSubmittedInputHistory(
   const byMessage = new Map<string, MissingSubmittedInputHistory[]>();
   const seen = new Set<string>();
   for (const interaction of interactions) {
-    if (!interaction.runId || !submittedResponse(interaction) || seen.has(interaction.interactionId)) continue;
+    const approvalHistory = ['resolved', 'expired'].includes(interaction.status) && validatedApprovalA2ui(interaction);
+    if (!interaction.runId || (!submittedResponse(interaction) && !approvalHistory) || seen.has(interaction.interactionId)) continue;
     seen.add(interaction.interactionId);
     const anchor = !anchors.has(interaction.interactionId);
-    const surfaceIds = presentationSurfaces(interaction).filter(id => !surfaces.has(`${interaction.interactionId}\0${id}`)
+    const surfaceIds = approvalHistory ? [] : presentationSurfaces(interaction).filter(id => !surfaces.has(`${interaction.interactionId}\0${id}`)
       && !runSurfaces.has(`${interaction.runId}\0${id}`));
     if (!anchor && !surfaceIds.length) continue;
     const candidates = messages.filter(message => (message.runId === interaction.runId
       || message.invocationId === interaction.runId) && !message.agentBlock
       && message.eventType !== 'optimistic_assistant_placeholder'
-      && (message.role === 'model' || message.role === 'user'));
+      && (message.role === 'model' || message.role === 'user' || (approvalHistory && message.role === 'a2ui')));
     const withText = candidates.filter(message => message.role === 'model' && message.content.trim());
     const assistants = candidates.filter(message => message.role === 'model');
-    const preferred = withText.length ? withText : assistants.length ? assistants : candidates;
+    const ordinary = candidates.filter(message => message.role !== 'a2ui');
+    const preferred = withText.length ? withText : assistants.length ? assistants : ordinary.length ? ordinary : candidates;
     const owner = preferred.reduce<Message | undefined>((latest, message) => {
       if (!latest) return message;
       const seq = message.historyOrder?.seq;

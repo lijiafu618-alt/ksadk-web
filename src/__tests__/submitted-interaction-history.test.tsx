@@ -60,6 +60,39 @@ describe('unprojected submitted node input history', () => {
     expect(render([message]).match(/data-testid="interaction-history-anchor"/g)).toHaveLength(1);
   });
 
+  it('recovers a completed approval plan without a tool anchor, and does not duplicate existing anchors', () => {
+    const record = { ...interaction, kind: 'approval' as const, outcome: 'approved', presentation: { a2ui: {
+      wireVersion: '0.9.1', catalogDigest: a2uiManifest.catalog_digest, messages: [
+        { version: 'v0.9', createSurface: { surfaceId: 'plan', catalogId: 'a2ui.org/catalogs/basic/v1.0' } },
+        { version: 'v0.9', updateComponents: { surfaceId: 'plan', components: [{ id: 'body', component: 'Card', body: 'Restored approval plan' }] } },
+      ],
+    } } };
+    const html = render([row('final')], [record]);
+    expect(html.match(/data-testid="interaction-history-anchor"/g)).toHaveLength(1);
+    expect(html.match(/Restored approval plan/g)).toHaveLength(1);
+    const existing = { ...row('with-tool'), tools: { approval: { name: 'approval', args: '', status: 'completed' as const, approvalRequestId: 'input' } } };
+    expect(missingSubmittedInputHistory([existing], [record]).size).toBe(0);
+    expect(render([existing], [record]).match(/Restored approval plan/g)).toHaveLength(1);
+  });
+
+  it('keeps an approval on a short page containing only its A2UI Activity, after the body preview is folded', () => {
+    const messages = [
+      { version: 'v0.9', createSurface: { surfaceId: 'plan', catalogId: 'a2ui.org/catalogs/basic/v1.0' } },
+      { version: 'v0.9', updateComponents: { surfaceId: 'plan', components: [{ id: 'body', component: 'Card', body: 'Only Activity plan' }] } },
+    ];
+    const record = { ...interaction, kind: 'approval' as const, outcome: 'approved', presentation: { a2ui: {
+      wireVersion: '0.9.1', catalogDigest: a2uiManifest.catalog_digest, messages,
+    } } };
+    const activity: Message = { ...row('only-activity'), role: 'a2ui', aguiActivity: { surfaceId: 'plan', messages, interactionId: 'input' } };
+    const html = render([activity], [record]);
+    expect(html.match(/data-testid="interaction-history-anchor"/g)).toHaveLength(1);
+    expect(html.match(/Only Activity plan/g)).toHaveLength(1);
+    expect(missingSubmittedInputHistory([activity], [record]).has('only-activity')).toBe(true);
+    const user = { ...row('user', 'run', 1), role: 'user' as const };
+    expect([...missingSubmittedInputHistory([activity, user], [record]).keys()]).toEqual(['user']);
+    expect(missingSubmittedInputHistory([activity], [{ ...record, kind: 'structured_input', outcome: 'submitted' }]).size).toBe(0);
+  });
+
   it('uses loaded run ownership and session sequence even when metadata or rows arrive in reverse order', () => {
     const other = { ...interaction, interactionId: 'other', runId: 'other-run' };
     const messages = [row('final', 'run', 30), row('other-final', 'other-run', 20), row('early', 'run', 10)];
