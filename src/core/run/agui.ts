@@ -26,6 +26,8 @@ type AguiRunClientOptions = {
   forwardedProps?: Record<string, unknown>;
 };
 
+type TextSnapshot = { messageId: string; content: string };
+
 type ToolState = { name: string; args: string };
 
 function eventType(event: BaseEvent): string {
@@ -77,6 +79,7 @@ export class AguiRunClient {
   private readonly runMessageIds = new Map<string, string>();
   private readonly pendingByRun = new Map<string, Interrupt[]>();
   private activeRunId = '';
+  private executionEpoch = 0;
   private readonly threadId: string;
   private forwardedProps: Record<string, unknown>;
 
@@ -153,6 +156,7 @@ export class AguiRunClient {
   }
 
   abort(): void {
+    this.executionEpoch += 1;
     this.agent.abortRun();
   }
 
@@ -169,10 +173,28 @@ export class AguiRunClient {
     resume?: ReturnType<typeof buildResumeArray>;
     abortController?: AbortController;
   }): Promise<AguiRunResult> {
+    const epoch = ++this.executionEpoch;
+    let acceptSnapshots = true;
+    const messageIds = new Set<string>();
+    const textSnapshot = (event: BaseEvent): TextSnapshot | null => {
+      if (!acceptSnapshots || epoch !== this.executionEpoch || this.activeRunId !== parameters.runId
+        || parameters.abortController?.signal.aborted) return null;
+      const payload = event as unknown as Record<string, unknown>;
+      if (eventType(event) !== 'CUSTOM' || payload.name !== 'ksadk.text_message_snapshot') return null;
+      const value = asObject(payload.value);
+      return value.version === 1 && value.threadId === this.threadId && value.runId === parameters.runId
+        && typeof value.messageId === 'string' && messageIds.has(value.messageId) && typeof value.content === 'string'
+        ? { messageId: value.messageId, content: value.content } : null;
+    };
     let status = 'completed' as AguiRunStatus;
     let finished = false;
     const subscriber: AgentSubscriber = {
-      onEvent: ({ event }) => {
+      onEvent: ({ event, messages }) => {
+        if (eventType(event) === 'TEXT_MESSAGE_START') messageIds.add(eventMessageId(event, `${parameters.runId}:assistant`));
+        const snapshot = textSnapshot(event);
+        if (snapshot && messages.some(message => message.id === snapshot.messageId && message.role === 'assistant')) {
+          this.onEvent({ type: 'text_replace', messageId: snapshot.messageId, text: snapshot.content, sessionId: this.threadId });
+        }
         if (eventType(event) === 'RUN_FINISHED') finished = true;
         if (eventType(event) === 'RUN_ERROR'
           && (event as BaseEvent & { code?: string }).code === 'INPUT_RESPONSE_INVALID') {
@@ -185,6 +207,12 @@ export class AguiRunClient {
         if (result.status) status = result.status;
         result.events.forEach((item) => this.onEvent(item));
       },
+      onCustomEvent: ({ event, messages }) => {
+        const snapshot = textSnapshot(event);
+        if (!snapshot || !messages.some(message => message.id === snapshot.messageId && message.role === 'assistant')) return;
+        return { messages: messages.map(message => message.id === snapshot.messageId && message.role === 'assistant'
+          ? { ...message, content: snapshot.content } : message) };
+      },
       onRunFinishedEvent: ({ outcome }) => {
         status = outcome === 'interrupt' ? 'interrupted' : 'completed';
       },
@@ -192,13 +220,16 @@ export class AguiRunClient {
         status = 'failed';
       },
     };
-    const result = await this.agent.runAgent({
-      runId: parameters.runId,
-      context: [ksadkA2uiAgentContext],
-      forwardedProps: { ...this.forwardedProps, injectA2UITool: true },
-      resume: parameters.resume,
-      abortController: parameters.abortController,
-    }, subscriber);
+    let result: RunAgentResult;
+    try {
+      result = await this.agent.runAgent({
+        runId: parameters.runId,
+        context: [ksadkA2uiAgentContext],
+        forwardedProps: { ...this.forwardedProps, injectA2UITool: true },
+        resume: parameters.resume,
+        abortController: parameters.abortController,
+      }, subscriber);
+    } finally { acceptSnapshots = false; }
     const pending = this.pendingByRun.get(parameters.runId) || this.agent.pendingInterrupts.slice();
     if (pending.length > 0) {
       this.pendingByRun.set(parameters.runId, pending);

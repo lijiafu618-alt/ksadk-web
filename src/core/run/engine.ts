@@ -266,12 +266,17 @@ export class RunEngineImpl implements RunEngine {
     const transport = this.config.hostedChatTransport;
     if (transport?.Protocol !== 'ag-ui' || !transport.Endpoint) return null;
     if (!this.aguiClient || this.aguiThreadSessionId !== sessionId) {
-      this.aguiClient = new AguiRunClient({
+      const client: AguiRunClient = new AguiRunClient({
         url: transport.Endpoint,
         agentId: this.config.agentId,
         threadId: sessionId,
-        onEvent: (event) => this.emit(event),
+        onEvent: (event) => {
+          if (event.type === 'text_replace' && (this.aguiClient !== client
+            || this.aguiThreadSessionId !== sessionId || this.activeSessionId !== sessionId)) return;
+          this.emit(event);
+        },
       });
+      this.aguiClient = client;
       this.aguiThreadSessionId = sessionId;
     }
     this.aguiClient.reconcileInteractions(sharedInteractionStore.listAll(sessionId));

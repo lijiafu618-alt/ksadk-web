@@ -38,6 +38,7 @@ export type RunEvent =
   | { type: 'user_message_added'; messageId: string; sessionId?: string | null }
   | { type: 'assistant_message_created'; messageId: string; invocationId?: string; sessionId?: string | null }
   | { type: 'text_delta'; messageId: string; delta: string; sessionId?: string | null }
+  | { type: 'text_replace'; messageId: string; text: string; sessionId?: string | null }
   | { type: 'text_final'; messageId: string; text: string; sessionId?: string | null }
   | { type: 'reasoning_delta'; messageId: string; delta: string; sessionId?: string | null }
   | { type: 'tool_upsert'; messageId: string; name: string; args: string; status: string; extra?: Record<string, unknown>; sessionId?: string | null }

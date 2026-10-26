@@ -4,6 +4,7 @@ import {
   appendThinkingBlock,
   appendTextBlock,
   finalizeTextBlock,
+  replaceTextBlocks,
   finalizeThinkingBlocks,
   stripMirroredTerminalAnswerFromThinking,
   upsertToolBlock,
@@ -177,6 +178,18 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
             : msg,
         ),
       );
+      break;
+
+    case 'text_replace':
+      if (event.sessionId && useSessionStore.getState().currentSessionId
+        && event.sessionId !== useSessionStore.getState().currentSessionId
+        && event.sessionId !== projection?.draftId) break;
+      // This is an authoritative edit of one known message, not a transcript
+      // snapshot or a terminal answer (which has separate legacy semantics).
+      ms.patchMessages(prev => prev.map(message => message.id === event.messageId && message.role === 'model'
+        ? { ...message, content: event.text, blocks: replaceTextBlocks(message.blocks, event.text) }
+        : message));
+      bumpEventCount(event.sessionId);
       break;
 
     case 'text_final':
