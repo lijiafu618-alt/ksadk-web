@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { canonicalize } from 'json-canonicalize';
 import type { Plugin } from 'vite';
@@ -13,6 +14,8 @@ export function a2uiAssets(): Plugin {
   return {
     name: 'a2ui-catalog-assets',
     buildStart() {
+      this.emitFile({ type: 'asset', fileName: 'a2ui/material-icons-OFL-1.1.txt',
+        source: readFileSync(createRequire(import.meta.url).resolve('@fontsource/material-icons/LICENSE')) });
       const manifest = JSON.parse(readFileSync(new URL('manifest.json', assetRoot), 'utf8'));
       const metadata = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
       for (const [name, version] of Object.entries(manifest.packages)) {
