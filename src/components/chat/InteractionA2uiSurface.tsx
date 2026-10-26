@@ -20,14 +20,18 @@ export function InteractionA2uiSurface({
   onSubmit: (payload: JsonValue) => void;
   onCancel: () => void;
 }) {
-  const surfaceId = a2ui.messages.flatMap(message => {
+  const surfaces = new Set<string>();
+  for (const message of a2ui.messages) {
     const create = message.createSurface as { surfaceId?: string } | undefined;
-    return create?.surfaceId ? [create.surfaceId] : [];
-  })[0];
-  if (!surfaceId) return <div role="alert">卡片没有可展示的 surface。</div>;
+    const remove = message.deleteSurface as { surfaceId?: string } | undefined;
+    if (create?.surfaceId) surfaces.add(create.surfaceId);
+    if (remove?.surfaceId) surfaces.delete(remove.surfaceId);
+  }
+  if (!surfaces.size) return <div role="alert">卡片没有可展示的 surface。</div>;
   return (
     <div className="mt-3" data-testid="interaction-a2ui-surface">
-      <A2UIActivityMessage
+      {[...surfaces].map(surfaceId => <A2UIActivityMessage
+        key={surfaceId}
         surfaceId={surfaceId}
         messages={a2ui.messages}
         disabled={disabled}
@@ -38,7 +42,7 @@ export function InteractionA2uiSurface({
             ? context.payload : context;
           onSubmit(jsonValue(payload));
         }}
-      />
+      />)}
       {disabled ? null : (
         <button
           type="button"

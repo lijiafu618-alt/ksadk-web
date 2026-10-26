@@ -7,6 +7,7 @@ type RecordValue = Record<string, unknown>;
 type Field = { name: string; label?: string; type?: string; required?: boolean; placeholder?: string; value?: unknown; options?: unknown[] };
 const object = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 const text = (value: unknown) => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
+const sameValue = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 const inputClass = 'rounded border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800';
 const buttonClass = 'rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50';
 
@@ -20,7 +21,9 @@ export function LegacyA2UISurface({ surfaceId, messages, onAction, disabled, his
 }) {
   const components = new Map<string, RecordValue>();
   let model: RecordValue = {};
-  for (const operation of messages) {
+  let generation = 0;
+  for (const [index, operation] of messages.entries()) {
+    if (object(operation.createSurface).surfaceId === surfaceId) generation = index;
     if (object(operation.deleteSurface).surfaceId === surfaceId) { components.clear(); model = {}; }
     const update = object(operation.updateComponents);
     if (update.surfaceId === surfaceId && Array.isArray(update.components)) {
@@ -57,12 +60,12 @@ export function LegacyA2UISurface({ surfaceId, messages, onAction, disabled, his
     switch (c.component) {
       case 'Text': return <p key={id} className={c.variant === 'title' ? 'text-lg font-semibold' : c.variant === 'error' ? 'text-red-600' : ''}>{text(c.text)}</p>;
       case 'Card': return <section key={id} className="space-y-3 rounded border p-4"><h3 className="font-semibold">{text(c.title)}</h3><div className="whitespace-pre-wrap">{text(c.body)}</div>{children}<p className="text-sm text-slate-500">{text(c.footer)}</p></section>;
-      case 'Form': return <LegacyForm key={id} component={c} model={model} disabled={disabled} historyAnswer={historyAnswer} submit={values => submit(id, 'submit', {payload: values})}>{children}</LegacyForm>;
+      case 'Form': return <LegacyForm key={JSON.stringify([surfaceId, generation, id])} component={c} model={model} disabled={disabled} historyAnswer={historyAnswer} submit={values => submit(id, 'submit', {payload: values})}>{children}</LegacyForm>;
       case 'ApprovalBar': return <section key={id} className="space-y-3"><p>{text(c.summary)}</p><div className="flex gap-3">
         <button className={buttonClass} type="button" disabled={disabled} onClick={() => void submit(id, 'approve', {confirmed: true, approved: true})}>{text(c.approve_label) || '批准'}</button>
         <button className={inputClass} type="button" disabled={disabled} onClick={() => void submit(id, 'deny', {confirmed: false, approved: false})}>{text(c.deny_label) || '拒绝'}</button>
       </div></section>;
-      case 'Select': case 'RadioGroup': case 'CheckboxGroup': return <LegacyChoice key={id} component={c} disabled={disabled} historyAnswer={historyAnswer} submit={value => submit(id, 'change', {value})} />;
+      case 'Select': case 'RadioGroup': case 'CheckboxGroup': return <LegacyChoice key={JSON.stringify([surfaceId, generation, id])} component={c} disabled={disabled} historyAnswer={historyAnswer} submit={value => submit(id, 'change', {value})} />;
       default: return <div role="alert" key={id}>当前组件目录不支持组件：{text(c.component)}</div>;
     }
   };
@@ -78,10 +81,23 @@ function LegacyForm({component, model, disabled, submit, children, historyAnswer
 }) {
   const rawFields = Array.isArray(component.fields) ? component.fields : [];
   const fields = rawFields.filter((field): field is Field => Boolean(field && typeof field === 'object' && typeof field.name === 'string'));
-  const [values, setValues] = useState<RecordValue>(() => Object.fromEntries(fields.map(field => [field.name,
+  const remoteValues: RecordValue = Object.fromEntries(fields.map(field => [field.name,
     field.value ?? model[field.name] ?? (['bool', 'boolean'].includes(field.type ?? '') ? false : ''),
-  ])));
-  const update = (name: string, value: unknown) => setValues(previous => ({...previous, [name]: value}));
+  ]));
+  const remoteKey = JSON.stringify(remoteValues);
+  const [draft, setDraft] = useState(() => ({ remoteKey, remoteValues, values: remoteValues }));
+  let values = draft.values;
+  if (draft.remoteKey !== remoteKey) {
+    // Apply changed server values without discarding drafts in other fields.
+    values = Object.fromEntries(Object.entries(remoteValues).map(([name, value]) => [name,
+      Object.hasOwn(draft.remoteValues, name) && sameValue(draft.remoteValues[name], value)
+        ? draft.values[name] : value,
+    ]));
+    setDraft({ remoteKey, remoteValues, values });
+  }
+  const update = (name: string, value: unknown) => setDraft(previous => ({
+    ...previous, values: { ...previous.values, [name]: value },
+  }));
   if (fields.length !== rawFields.length) return <div role="alert">表单字段格式无效。</div>;
   return <form className="space-y-4" onSubmit={event => {
     event.preventDefault();
@@ -121,7 +137,14 @@ function LegacyChoice({component, disabled, submit, historyAnswer}: { component:
   const options = (Array.isArray(component.options) ? component.options : []).map(raw => {
     const option = object(raw); return {value: option.value ?? raw, label: text(option.label ?? option.value ?? raw)};
   });
-  const [value, setValue] = useState<unknown>(component.value ?? (multiple ? [] : ''));
+  const remoteValue: unknown = component.value ?? (multiple ? [] : '');
+  const remoteKey = JSON.stringify([multiple, remoteValue]);
+  const [draft, setDraft] = useState(() => ({ remoteKey, value: remoteValue }));
+  let value = draft.value;
+  if (draft.remoteKey !== remoteKey) {
+    value = remoteValue;
+    setDraft({ remoteKey, value });
+  }
   const history = historyAnswer ? legacyChoiceAnswer(historyAnswer) : undefined;
   const selected = history ? history.value : value;
   return <label className="flex flex-col gap-1"><span>{text(component.label)}</span>{history && (history.hidden || !history.found || selected === null)
@@ -130,6 +153,6 @@ function LegacyChoice({component, disabled, submit, historyAnswer}: { component:
     value={multiple ? (Array.isArray(selected) ? selected.map(text) : []) : text(selected)}
     onChange={event => {
       const selected = multiple ? [...event.target.selectedOptions].map(option => options.find(o => text(o.value) === option.value)?.value) : options.find(o => text(o.value) === event.target.value)?.value;
-      setValue(selected); void submit(selected);
+      setDraft(previous => ({ ...previous, value: selected })); void submit(selected);
     }}><option value="" disabled>请选择</option>{options.map((option, i) => <option key={i} value={text(option.value)}>{option.label}</option>)}</select>}</label>;
 }

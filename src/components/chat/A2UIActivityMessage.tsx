@@ -107,9 +107,12 @@ export function A2UIActivityMessage(props: Props) {
     return projectA2uiHistoryResponse(props.surfaceId, props.messages,
       props.boundInteraction.requestSchema, accepted.value);
   }, [unchangedInput, props.surfaceId, props.messages, props.boundInteraction]);
-  // The composer owns the active input. Timeline history becomes read-only
-  // after consumption, rather than mounting a second interactive copy.
-  if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) return null;
+  // The composer owns input controls, but approval controls there do not
+  // render the Agent's operation details. Keep that presentation read-only.
+  if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) {
+    return props.boundInteraction.kind === 'approval'
+      ? <A2uiSnapshot {...props} disabled onAction={undefined} /> : null;
+  }
   const questions = props.surfaceId.startsWith('input-') ? legacyQuestionSummary(props.messages) : null;
   if (questions) {
     return (

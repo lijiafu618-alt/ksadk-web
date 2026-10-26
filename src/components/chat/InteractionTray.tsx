@@ -297,6 +297,7 @@ export function InteractionTray({
 
         {mode === 'a2ui' && active.presentation?.a2ui ? (
           <InteractionA2uiSurface
+            key={JSON.stringify([active.sessionId, active.interactionId, active.revision])}
             a2ui={active.presentation.a2ui}
             disabled={disabled}
             onSubmit={(payload) => respond('submit', payload)}
