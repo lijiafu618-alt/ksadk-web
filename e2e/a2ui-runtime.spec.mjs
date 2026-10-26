@@ -26,6 +26,7 @@ async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
     'KSADK_LANGGRAPH_LOCAL_AUTO_CHECKPOINT', 'AGENT_INSTANCE_ID', 'AGENT_CONTROL_JWKS_URL']) delete environment[key];
   Object.assign(environment, {
     KSADK_SESSION_BACKEND: 'local', AGENT_KERNEL_AUTHORITY_MODE: 'local',
+    KSADK_LANGGRAPH_AUTO_CHECKPOINT: '1',
     KSADK_TEST_A2UI_PROJECT: dockerImage ? '/a2ui-project' : project,
     KSADK_TEST_A2UI_WEB: dockerImage
       ? '/usr/local/lib/python3.12/site-packages/ksadk/server/static'
@@ -333,7 +334,7 @@ for (const mode of ['schema', 'invalid-catalog']) {
       await page.getByText('a2ui-e2e', { exact: true }).first().waitFor();
       await page.getByPlaceholder('发送消息…').fill('先填写资源，再查询');
       await page.getByPlaceholder('发送消息…').press('Enter');
-      const input = page.getByTestId('interaction-field-resource');
+      const input = page.getByTestId('interaction-tray').getByTestId('interaction-field-resource');
       await expect(input).toBeVisible();
       await expect(page.getByTestId('interaction-a2ui-surface')).toHaveCount(0);
       const before = checkpoints(project);
