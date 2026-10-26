@@ -399,7 +399,7 @@ test('approve sends exactly one SubmitInteraction and replay never resubmits', a
   // Inbox — the UI stays "resolving" until the authoritative
   // interaction.resolved SessionEvent arrives.
   await expect(tray).toHaveAttribute('data-interaction-status', 'resolving');
-  await expect(page.getByText('正在提交，请稍候…')).toBeVisible();
+  await expect(tray.getByTestId('interaction-submit-progress')).toHaveText('已提交，等待 Agent 处理。处理结果将显示在对话中。');
 
   // Replay after resolution (terminal fact carried by the SessionEvent
   // stream): history shows a read-only anchor, no second request ever
