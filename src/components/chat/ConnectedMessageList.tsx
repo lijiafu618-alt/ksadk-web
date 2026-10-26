@@ -6,6 +6,7 @@ import { useMessageStore } from '../../stores/message.js';
 import { useSessionStore } from '../../stores/session.js';
 import { useModelStore } from '../../stores/model.js';
 import { useCheckpointStore } from '../../stores/checkpoint.js';
+import { useBootstrapStore } from '../../stores/bootstrap.js';
 import { ChatMessageList } from './ChatMessageList';
 import { AttachmentPreview } from './AttachmentPreview';
 import { buildComposerContextIndicator } from '../../utils/context.js';
@@ -73,6 +74,13 @@ export function ConnectedMessageList({
   const currentMessageHistory = useSessionStore((s: SessionStore) =>
     currentSessionId ? s.messageHistory[currentSessionId] : null,
   );
+  const hostedRuntime = useBootstrapStore(s => s.capabilities.HostedRuntime);
+  // Checkpoint storage does not establish whether session history is durable.
+  const persistenceWarning = hostedRuntime === false
+    ? '当前会话历史的持久恢复尚未确认。本地恢复取决于所用存储及数据文件是否保留，不保证跨实例恢复。'
+    : hostedRuntime === true
+      ? '当前会话历史处于持久化降级状态。刷新、重启或切换实例后，部分消息可能无法恢复。'
+      : '当前会话历史的持久恢复尚未确认。刷新或切换设备后，部分消息可能无法恢复。';
   const isLoadingInitialHistory = isLoadingSessions || Boolean(currentMessageHistory?.isLoadingInitial);
   const contextUsage = useSessionStore(s => s.sessions.find(item => item.SessionId === currentSessionId)?.ContextUsage);
   const availableModels = useModelStore((s: ModelStore) => s.availableModels);
@@ -406,7 +414,7 @@ export function ConnectedMessageList({
     <>
       {currentMessageHistory?.persistenceDegraded && (
         <div role="status" data-testid="history-persistence-warning" className="mx-auto w-full max-w-3xl px-6 py-2 text-sm text-amber-700 dark:text-amber-300">
-          当前会话历史尚未持久化。刷新或切换设备后，部分消息可能无法恢复。
+          {persistenceWarning}
         </div>
       )}
       {currentMessageHistory?.error && (
