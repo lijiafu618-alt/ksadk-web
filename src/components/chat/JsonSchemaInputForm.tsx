@@ -125,7 +125,10 @@ function SchemaField(props: FieldProps) {
   } else if (type === 'object' || isObject(schema.properties)) {
     const properties = isObject(schema.properties) ? schema.properties : {};
     const required = Array.isArray(schema.required) ? schema.required : [];
-    control = Object.keys(properties).length ? <fieldset disabled={disabled} className="space-y-2 pl-2">
+    // Boolean property schemas are valid JSON Schema. Preserve the whole
+    // object in the JSON fallback instead of silently dropping those fields.
+    const hasBooleanSchema = Object.values(properties).some(child => typeof child === 'boolean');
+    control = Object.keys(properties).length && !hasBooleanSchema ? <fieldset disabled={disabled} className="space-y-2 pl-2">
       {Object.entries(properties).map(([name, child]) => isObject(child) ? <SchemaField key={name}
         schema={child} value={isObject(value) ? value[name] : undefined}
         path={path ? `${path}/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` : name.replaceAll('~', '~0').replaceAll('/', '~1')} label={`${typeof child.title === 'string' ? child.title : name}${required.includes(name) ? ' *' : ''}`}
