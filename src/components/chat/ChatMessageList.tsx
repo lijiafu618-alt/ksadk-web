@@ -970,7 +970,7 @@ function ChatMessage({
         const bound = interactionForA2uiActivity(activity, message, interactionRecords);
         return (
         <A2UIActivityMessage
-          key={activity.surfaceId}
+          key={JSON.stringify([activity.runId || message.runId || message.invocationId || message.id, activity.interactionId, activity.surfaceId])}
           surfaceId={activity.surfaceId}
           messages={activity.messages}
           disabled={Boolean(activity.interactionId || bound)}

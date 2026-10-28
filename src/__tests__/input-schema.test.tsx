@@ -26,6 +26,17 @@ describe('Runtime/Web shared JSON Schema cases', () => {
 });
 
 describe('Generic interaction submissions', () => {
+  it.each([
+    { 'x-codex-is-secret': true }, { 'x-sensitive': true }, { writeOnly: true }, { format: 'password' },
+  ])('masks active string controls using the declared secret annotation %j', annotation => {
+    const html = renderToStaticMarkup(<JsonSchemaInputForm disabled={false} onSubmit={() => {}} onCancel={() => {}}
+      schema={{ type: 'object', properties: { token: { type: 'string', ...annotation },
+        custom: { type: 'string', enum: ['known'], 'x-codex-is-other': true, ...annotation },
+        password: { type: 'string' } } }} />);
+    expect(html.match(/type="password"/g)).toHaveLength(2);
+    expect(html).toMatch(/data-testid="interaction-field-password"[^>]*type="text"/);
+  });
+
   it.each([null, false, 0, '', [], { enabled: false, count: 0, note: null }])('preserves response %j', async response => {
     const submit = vi.fn().mockResolvedValue({ schema_version: 1, command_id: 'command', status: 'accepted' });
     const client = new InteractionClientImpl({ agentId: 'agent', interactionV1Enabled: true, submitInteraction: submit });

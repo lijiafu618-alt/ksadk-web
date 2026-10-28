@@ -202,6 +202,7 @@ function mapBackendActivities(msg) {
       role: 'a2ui',
       content: '',
       timestamp: parseTimestamp(msg.Timestamp),
+      ...(msg.InvocationId ? { invocationId: String(msg.InvocationId) } : {}),
       ...(Number.isSafeInteger(msg.SeqId) && msg.SeqId > 0 ? { historyOrder: { seq: msg.SeqId, index: index + 1,
         ...(Number.isSafeInteger(msg.StartSeqId) && msg.StartSeqId > 0 ? { group: msg.StartSeqId } : {}),
       } } : {}),

@@ -10,7 +10,6 @@
     "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
     "build:all": "npm run build:ksadk && npm run build:hosted && npm run build:demo && npm run build:lib",
     "prepack": "npm run build:lib && npm run build:ksadk",
-    "pack:candidate": "node scripts/pack-candidate.mjs",
     "lint": "NODE_OPTIONS=--max-old-space-size=6144 eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "preview": "vite preview",
@@ -93,7 +92,6 @@
     "README.md",
     "CHANGELOG.md",
     "RELEASE_PROVENANCE.json",
-    "SOURCE_CANDIDATE.json",
     "schemas",
     "LICENSE",
     "package.json"

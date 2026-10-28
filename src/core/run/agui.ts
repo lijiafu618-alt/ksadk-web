@@ -79,6 +79,7 @@ export class AguiRunClient {
   private readonly runMessageIds = new Map<string, string>();
   private readonly pendingByRun = new Map<string, Interrupt[]>();
   private activeRunId = '';
+  private logicalRunId = '';
   private executionEpoch = 0;
   private readonly threadId: string;
   private forwardedProps: Record<string, unknown>;
@@ -119,6 +120,7 @@ export class AguiRunClient {
 
   async run(text: string, runId: string, signal?: AbortSignal): Promise<AguiRunResult> {
     this.activeRunId = runId;
+    this.logicalRunId = runId;
     this.agent.addMessage({
       id: `${runId}:user`,
       role: 'user',
@@ -129,7 +131,7 @@ export class AguiRunClient {
 
   async resume(
     runId: string,
-    response: { interruptId: string; status: 'resolved' | 'cancelled'; payload?: unknown },
+    response: { interruptId: string; status: 'resolved' | 'cancelled'; payload?: unknown; logicalRunId?: string },
   ): Promise<AguiRunResult> {
     if (response.status === 'resolved' && response.payload === null) {
       throw new Error('AG-UI 1.0 根 null 答案须通过 Interaction/v1 提交。');
@@ -151,6 +153,9 @@ export class AguiRunClient {
     if (!resume.some((entry) => entry.interruptId === response.interruptId)) {
       throw new Error(`AG-UI interrupt ${response.interruptId} is not pending`);
     }
+    const originalRun = interrupts.find(interrupt => interrupt.id === response.interruptId)?.metadata?.run_id;
+    this.logicalRunId = response.logicalRunId || (typeof originalRun === 'string' ? originalRun : '')
+      || this.logicalRunId || this.activeRunId || runId;
     this.activeRunId = runId;
     return this.execute({ runId, resume });
   }
@@ -174,6 +179,7 @@ export class AguiRunClient {
     abortController?: AbortController;
   }): Promise<AguiRunResult> {
     const epoch = ++this.executionEpoch;
+    const logicalRunId = this.logicalRunId || parameters.runId;
     let acceptSnapshots = true;
     const messageIds = new Set<string>();
     const textSnapshot = (event: BaseEvent): TextSnapshot | null => {
@@ -203,7 +209,7 @@ export class AguiRunClient {
             message: '答案未通过 Runtime 校验，请修改后重新提交。',
           });
         }
-        const result = this.project(event, parameters.runId, Boolean(parameters.resume?.length));
+        const result = this.project(event, parameters.runId, Boolean(parameters.resume?.length), logicalRunId);
         if (result.status) status = result.status;
         result.events.forEach((item) => this.onEvent(item));
       },
@@ -238,7 +244,7 @@ export class AguiRunClient {
     return { status: finished ? status : 'failed', result, pendingInterruptIds: pending.map(item => item.id) };
   }
 
-  private project(event: BaseEvent, fallbackRunId: string, resuming = false): { events: RunEvent[]; status?: AguiRunStatus } {
+  private project(event: BaseEvent, fallbackRunId: string, resuming = false, logicalRunId = fallbackRunId): { events: RunEvent[]; status?: AguiRunStatus } {
     const type = eventType(event);
     const runId = eventRunId(event, fallbackRunId);
     const messageId = eventMessageId(event, `${runId}:assistant`);
@@ -249,7 +255,7 @@ export class AguiRunClient {
       events.push({ type: 'activity', phase: 'AG-UI 运行已创建', status: 'running', countEvent: false });
     } else if (type === 'TEXT_MESSAGE_START') {
       this.runMessageIds.set(runId, messageId);
-      events.push({ type: 'assistant_message_created', messageId });
+      events.push({ type: 'assistant_message_created', messageId, invocationId: logicalRunId });
     } else if (type === 'TEXT_MESSAGE_CONTENT') {
       events.push({ type: 'text_delta', messageId: this.runMessageIds.get(runId) || messageId, delta: String(payload.delta || '') });
     } else if (type === 'TEXT_MESSAGE_END') {
@@ -290,6 +296,7 @@ export class AguiRunClient {
       const surfaceId = String(activity.surfaceId || activity.surface_id || payload.messageId || 'default');
       events.push({
         type: 'agui_activity',
+        runId: logicalRunId,
         ...(typeof activity.batchId === 'string' ? { batchId: activity.batchId } : {}),
         ...(typeof activity.interactionId === 'string' ? { interactionId: activity.interactionId } : {}),
         // A2UI operations belong to the assistant turn that produced them.

@@ -107,7 +107,7 @@ test('browser shows persistence warning and sends source, epoch and zero snapsho
   }) }));
   await page.getByRole('button', { name: 'Open S' }).click();
   await expect(page.getByText('Old history')).toBeVisible();
-  await expect(page.getByTestId('history-persistence-warning')).toContainText('尚未持久化');
+  await expect(page.getByTestId('history-persistence-warning')).toContainText('持久恢复尚未确认');
   await page.getByRole('button', { name: 'Older S', exact: true }).click();
   await expect.poll(() => calls.filter(call => call.action === 'ListSessionMessages').length).toBe(2);
   expect(calls.filter(call => call.action === 'ListSessionMessages')[1].body).toMatchObject({

@@ -915,6 +915,7 @@ export class RunEngineImpl implements RunEngine {
         this.setStage('streaming');
         const result = await aguiClient.resume(invocationId, {
           interruptId: params.interruptId,
+          logicalRunId: sharedInteractionStore.get(sessionId, params.interruptId)?.runId || undefined,
           status: params.status,
           payload: params.payload,
         });

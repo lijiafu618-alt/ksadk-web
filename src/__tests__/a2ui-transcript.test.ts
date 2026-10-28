@@ -6,7 +6,7 @@ import type { Message } from '../components/chat/types.js';
 const birth = [{ version: 'v0.9.1', createSurface: { surfaceId: 'one', catalogId: 'official' } }];
 const update = [{ version: 'v0.9.1', updateDataModel: { surfaceId: 'one', path: '/', value: { answer: false } } }];
 const message = (id: string, extra: Partial<Message>): Message => ({
-  id, role: 'model', content: '', timestamp: 1, ...extra,
+  id, role: 'model', content: '', timestamp: 1, runId: 'same-logical-run', ...extra,
 });
 
 describe('one A2UI surface across live and historical carriers', () => {

@@ -72,12 +72,18 @@ export type Message = {
     ended?: boolean;
   };
   aguiActivity?: {
+    /** The actual source message, including while rendered as a standalone card. */
+    originMessageId?: string;
+    /** Original logical run, retained across a resumed transport attempt. */
+    runId?: string;
     batchIds?: string[];
     interactionId?: string;
     surfaceId: string;
     messages: Array<Record<string, unknown>>;
   };
   aguiActivities?: Array<{
+    originMessageId?: string;
+    runId?: string;
     batchIds?: string[];
     interactionId?: string;
     surfaceId: string;

@@ -35,7 +35,7 @@ function Choices({ choices, multiple, allowOther, ...props }: FieldProps & {
     </label>)}
     {allowOther ? <input className={controlClass} disabled={props.disabled}
       aria-label={`${typeof props.schema.title === 'string' ? props.schema.title : props.label}：自定义回答`}
-      type={props.schema['x-codex-is-secret'] ? 'password' : 'text'}
+      type={isSensitiveInputSchema(props.schema, props.rootSchema) ? 'password' : 'text'}
       value={multiple ? selected.filter(value => !known(value)).join('\n') : known(props.value) ? '' : String(props.value ?? '')}
       onChange={event => props.onChange(multiple
         ? [...selected.filter(known), ...(event.target.value.trim() ? [event.target.value] : [])]
@@ -151,7 +151,7 @@ function SchemaField(props: FieldProps) {
       onChange={event => set(event.target.value === '' ? undefined : event.target.valueAsNumber)} />;
   } else if (type === 'string') {
     control = <input aria-label={label} data-testid={testId} className={controlClass}
-      type={schema.writeOnly || schema.format === 'password' ? 'password' : 'text'}
+      type={isSensitiveInputSchema(schema, props.rootSchema) ? 'password' : 'text'}
       disabled={disabled} value={typeof value === 'string' ? value : ''} onChange={event => set(event.target.value)} />;
   } else {
     control = <JsonEditor {...props} />;
@@ -194,7 +194,7 @@ export function JsonSchemaInputForm({ schema, disabled, onSubmit, onCancel }: {
       if (!result.valid) { setError(result.issues.join('；')); return; }
       setError(''); onSubmit(jsonValue(value));
     }}>
-    <SchemaField schema={schema} value={value} path="" label={typeof schema.title === 'string' ? schema.title : '请填写信息'}
+    <SchemaField schema={schema} rootSchema={schema} value={value} path="" label={typeof schema.title === 'string' ? schema.title : '请填写信息'}
       disabled={disabled} depth={0} onChange={setValue} onInvalid={onInvalid} />
     {error ? <p role="alert" className="text-xs text-rose-600">{error}</p> : null}
     <div className="flex gap-2">

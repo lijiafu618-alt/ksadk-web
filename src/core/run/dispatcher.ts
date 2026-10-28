@@ -1,5 +1,6 @@
 import type { RunEvent } from './types.js';
 import { mergeA2uiActivity } from '../a2ui/history.js';
+import { findA2uiActivityOwner } from '../a2ui/transcript.js';
 import {
   appendThinkingBlock,
   appendTextBlock,
@@ -721,35 +722,34 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
     }
 
     case 'agui_activity': {
-      const msgId = `agui-a2ui-${event.surfaceId}`;
       useMessageStore.getState().patchMessages((prev) => {
+        const target = prev.find(message => message.id === event.messageId);
+        const runId = event.runId || target?.runId || target?.invocationId;
+        const msgId = `agui-a2ui-${JSON.stringify([runId || event.messageId, event.interactionId || '', event.surfaceId])}`;
         const incoming = { surfaceId: event.surfaceId, messages: event.messages,
+          originMessageId: event.messageId,
+          ...(runId ? { runId } : {}),
           ...(event.interactionId ? { interactionId: event.interactionId } : {}) };
         // A resumed wire attempt may have a new assistant message ID. The
         // surface still belongs to its original logical interaction/history.
-        let updated = false;
-        const retained = prev.map(message => {
-          if (message.aguiActivity?.surfaceId === event.surfaceId) {
-            updated = true;
-            return { ...message, aguiActivity: mergeA2uiActivity(message.aguiActivity, incoming, event.batchId) };
-          }
-          if (message.aguiActivities?.some(item => item.surfaceId === event.surfaceId)) {
-            updated = true;
-            return { ...message, aguiActivities: message.aguiActivities.map(item => item.surfaceId === event.surfaceId
-              ? mergeA2uiActivity(item, incoming, event.batchId) : item) };
-          }
-          return message;
+        const owners = prev.flatMap(message => [
+          ...(message.aguiActivity ? [{ message, activity: message.aguiActivity }] : []),
+          ...(message.aguiActivities || []).map(activity => ({ message, activity })),
+        ]);
+        const owner = findA2uiActivityOwner(owners, { message: target || { id: event.messageId }, activity: incoming });
+        if (owner) return prev.map(message => message !== owner.message ? message : {
+          ...message,
+          ...(message.aguiActivity === owner.activity ? {
+            aguiActivity: mergeA2uiActivity(owner.activity, incoming, event.batchId),
+          } : { aguiActivities: message.aguiActivities?.map(activity => activity === owner.activity
+            ? mergeA2uiActivity(activity, incoming, event.batchId) : activity) }),
         });
-        if (updated) return retained;
         let attached = false;
         const withAttachedActivity = prev.map((message) => {
           if (message.id !== event.messageId) return message;
           attached = true;
           const prior = message.aguiActivities || [];
-          const next = [
-            ...prior.filter((item) => item.surfaceId !== event.surfaceId),
-            mergeA2uiActivity(prior.find(item => item.surfaceId === event.surfaceId), incoming, event.batchId),
-          ];
+          const next = [...prior, mergeA2uiActivity(undefined, incoming, event.batchId)];
           return { ...message, aguiActivities: next };
         });
         if (attached) return withAttachedActivity;
@@ -762,6 +762,7 @@ export function dispatchRunEventToStores(event: RunEvent, projection?: { visible
           role: 'a2ui',
           content: '',
           timestamp: current?.timestamp || Date.now(),
+          ...(runId ? { invocationId: runId } : {}),
           aguiActivity: mergeA2uiActivity(current?.aguiActivity, incoming, event.batchId),
         };
         return current

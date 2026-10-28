@@ -12,6 +12,36 @@ function sse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe('AguiRunClient', () => {
+  it.each([false, true])('keeps activity ownership on the original logical run through resume, rehydrated=%s', async rehydrated => {
+    const projected: RunEvent[] = [];
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = new AguiRunClient({ url: '/agui', agentId: 'agent', threadId: 'session',
+      onEvent: event => projected.push(event), fetch: vi.fn(async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body));
+        bodies.push(body);
+        const start = { type: 'RUN_STARTED', threadId: 'session', runId: body.runId };
+        if (!rehydrated && bodies.length === 1) return sse([start, {
+          type: 'RUN_FINISHED', threadId: 'session', runId: body.runId,
+          outcome: { type: 'interrupt', interrupts: [{ id: 'wait', reason: 'structured_input' }] },
+        }]);
+        return sse([start,
+          { type: 'TEXT_MESSAGE_START', messageId: `${body.runId}:text`, role: 'assistant' },
+          { type: 'ACTIVITY_SNAPSHOT', messageId: `${body.runId}:surface`, activityType: 'a2ui-surface',
+            content: { surfaceId: 'dynamic-surface', a2ui_operations: [] } },
+          { type: 'TEXT_MESSAGE_END', messageId: `${body.runId}:text` },
+          { type: 'RUN_FINISHED', threadId: 'session', runId: body.runId, outcome: { type: 'success' } },
+        ]);
+      }) });
+    if (!rehydrated) await client.run('first', 'original-logical-run');
+    await client.resume('resume-wire', { interruptId: 'wait', status: 'resolved', payload: { answer: 'yes' },
+      ...(rehydrated ? { logicalRunId: 'original-logical-run' } : {}) });
+    expect(projected).toContainEqual(expect.objectContaining({ type: 'agui_activity', runId: 'original-logical-run' }));
+    expect(projected).toContainEqual({ type: 'assistant_message_created', messageId: 'resume-wire:text', invocationId: 'original-logical-run' });
+    expect(bodies.at(-1)).not.toHaveProperty('logicalRunId');
+    await client.run('second', 'next-logical-run');
+    expect(projected.filter(event => event.type === 'agui_activity').at(-1)).toMatchObject({ runId: 'next-logical-run' });
+  });
+
   it.each(['resolved', 'cancelled', 'expired'])('allows a new turn after authoritative canonical %s without refreshing', async status => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
@@ -194,6 +224,7 @@ describe('AguiRunClient', () => {
     expect(projected).toContainEqual({ type: 'tool_result', messageId: 'message-1', name: 'lookup', output: 'ok' });
     expect(projected).toContainEqual({
       type: 'agui_activity',
+      runId: 'run-1',
       messageId: 'message-1',
       surfaceId: 'surface-1',
       messages: [

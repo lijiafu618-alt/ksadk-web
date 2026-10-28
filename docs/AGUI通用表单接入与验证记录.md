@@ -53,7 +53,7 @@
 - 可恢复的 AG-UI 请求保留模型选择、reasoning 和工具权限选项；前台附件按既有 RunAgent 上传流程进入同一交互账本。后台或旧 Responses 未宣告 A2UI 的能力保持原范围。
 - 真后端/真浏览器最终本地集合扩为 5 项，包含实际上传附件；全部通过。三类真实模型生成又分别执行通过。浏览器报告携带 checkpoint 前后、公开提交身份与实际工具计数，输出可用 `KSADK_TEST_OUTPUT_DIR` 分次保留。
 - `KSADK_TEST_RUNTIME_PYTHON`、`KSADK_TEST_RUNTIME_APP_DIR`、`KSADK_TEST_A2UI_WEB` 可让同一套 E2E 针对干净安装 wheel 和包内静态页运行；不会改成 API/SSE mock。
-- `pack:candidate` 从已提交源码执行正常 prepack 构建，归档 source commit/source archive SHA 和 npm 包 SHA；不上传 registry、不变更公开版本。Makefile 仍校验精确 Web archive 摘要，拒绝另一份同版本包。
+- 本地联调继续使用标准 `npm pack`，由原有 `prepack` 构建库和页面；测试归档保留在本地忽略目录，不使用专用候选标记或新的打包入口。SDK 正式构建消费固定的已发布 npm 版本，本地测试通过不表示 Web 已发布。
 - 本批 Web 单测为 1042 passed；候选包安装后的结果及 M1 签收另记。
 
 ## SDK Studio 消费者兼容检查

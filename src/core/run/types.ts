@@ -79,6 +79,8 @@ export type RunEvent =
   | { type: 'a2ui_interaction'; surfaceId: string; interactionId: string; kind: string; inputSchema: Record<string, unknown>; sessionId?: string | null }
   | {
       type: 'agui_activity';
+      /** Original logical run, distinct from a resume request's wire run id. */
+      runId?: string;
       batchId?: string;
       interactionId?: string;
       messageId: string;
