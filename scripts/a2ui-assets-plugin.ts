@@ -13,6 +13,7 @@ const digest = (value: string | Buffer) => createHash('sha256').update(value).di
 export function a2uiAssets(): Plugin {
   return {
     name: 'a2ui-catalog-assets',
+    apply: 'build',
     buildStart() {
       this.emitFile({ type: 'asset', fileName: 'a2ui/material-icons-OFL-1.1.txt',
         source: readFileSync(createRequire(import.meta.url).resolve('@fontsource/material-icons/LICENSE')) });

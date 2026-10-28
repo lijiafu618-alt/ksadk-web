@@ -13,7 +13,7 @@
     "lint": "NODE_OPTIONS=--max-old-space-size=6144 eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "test": "vitest run --dir src",
+    "test": "vitest run src",
     "test:node": "node --test tests/*.test.mjs",
     "test:watch": "vitest src",
     "test:e2e:interaction": "playwright test --config playwright.interaction.config.mjs",
