@@ -83,6 +83,48 @@ beforeEach(() => {
 });
 
 describe('submitted conversation ownership', () => {
+  it.each([false, true])('starts a fresh legacy conversation after its draft acquired a native ID (explicit creation=%s)', async explicitCreation => {
+    const streams = [outputStream(), outputStream()];
+    const createSession = vi.fn().mockResolvedValueOnce({ SessionId: 'native-a' })
+      .mockResolvedValueOnce({ SessionId: 'native-b' });
+    const runAgent = vi.fn().mockResolvedValueOnce(streams[0].stream)
+      .mockResolvedValueOnce(streams[1].stream);
+    const currentSessionIdRef = { current: null as string | null };
+    const onSettled = vi.fn();
+    let pendingCreation: Promise<string | null> | undefined;
+    let actions!: ReturnType<typeof useRunAgent>;
+    function LegacyShell() {
+      actions = useRunAgent({ ...config,
+        api: { createSession, runAgent } as unknown as ApiFacade,
+        uiCapabilities: {}, isMobile: false, currentSessionId: null,
+        currentSessionIdRef, agentIdRef: { current: 'agent-a' },
+        queuedDraftRef: { current: [] }, conversationClient: null,
+        waitForPendingSessionCreation: async () => pendingCreation
+          ? await pendingCreation : currentSessionIdRef.current,
+        onSessionCreated: id => {
+          currentSessionIdRef.current = id;
+          useSessionStore.getState().setCurrentSessionId(id);
+        }, onRunSettled: onSettled,
+      });
+      return null;
+    }
+    renderToString(createElement(LegacyShell));
+    await actions.submitDraft('first conversation', []);
+    await vi.waitFor(() => expect(runAgent).toHaveBeenCalledTimes(1));
+    streams[0].close();
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledTimes(1));
+
+    currentSessionIdRef.current = null;
+    useSessionStore.getState().setCurrentSessionId(null);
+    if (explicitCreation) pendingCreation = Promise.resolve('native-b');
+    await actions.submitDraft('second conversation', []);
+    await vi.waitFor(() => expect(runAgent).toHaveBeenCalledTimes(2));
+    streams[1].close();
+    await vi.waitFor(() => expect(onSettled).toHaveBeenCalledTimes(2));
+    expect(runAgent.mock.calls.map(([body]) => body.SessionId)).toEqual(['native-a', 'native-b']);
+    expect(createSession).toHaveBeenCalledTimes(explicitCreation ? 1 : 2);
+  });
+
   it.each([true, false])('settles an approval wait without a retryable failure (approval=%s)', async approval => {
     const stream = new ReadableStream<Uint8Array>({ start(controller) {
       controller.enqueue(new TextEncoder().encode(

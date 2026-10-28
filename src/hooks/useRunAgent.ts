@@ -294,7 +294,16 @@ export function useRunAgent(ctx: RunAgentContext) {
           useStreamingStore.getState().setSessionStreaming(sessionId, true);
           if (previousKey !== sessionId) useStreamingStore.getState().setSessionStreaming(previousKey, false);
           // Legacy shells acquire a native ID without changing the execution owner.
-          if (!owner.conversationId) ownersRef.current.set(JSON.stringify([owner.agentId, sessionId]), owner);
+          if (!owner.conversationId) {
+            const nativeKey = JSON.stringify([owner.agentId, sessionId]);
+            ownersRef.current.set(nativeKey, owner);
+            // A bound run keeps its native owner; the draft alias must be free
+            // for a subsequent conversation in shells without a controller.
+            if (owner.key !== nativeKey && ownersRef.current.get(owner.key) === owner) {
+              ownersRef.current.delete(owner.key);
+            }
+            owner.key = nativeKey;
+          }
           onSessionCreated?.(sessionId, owner.conversationId, owner.agentId);
           if (!onSessionCreated && wasVisible) {
             useSessionStore.getState().upsertSessions([{ SessionId: sessionId, UpdatedAt: new Date().toISOString() } as unknown as Session]);
