@@ -83,15 +83,21 @@ beforeEach(() => {
 });
 
 describe('submitted conversation ownership', () => {
-  it.each([false, true])('starts a fresh legacy conversation after its draft acquired a native ID (explicit creation=%s)', async explicitCreation => {
+  it.each([
+    { firstExplicit: false, secondExplicit: false },
+    { firstExplicit: false, secondExplicit: true },
+    { firstExplicit: true, secondExplicit: false },
+    { firstExplicit: true, secondExplicit: true },
+  ])('starts a fresh legacy conversation after native binding ($firstExplicit → $secondExplicit)', async ({ firstExplicit, secondExplicit }) => {
     const streams = [outputStream(), outputStream()];
-    const createSession = vi.fn().mockResolvedValueOnce({ SessionId: 'native-a' })
+    const createSession = vi.fn().mockResolvedValueOnce({ SessionId: firstExplicit ? 'native-b' : 'native-a' })
       .mockResolvedValueOnce({ SessionId: 'native-b' });
     const runAgent = vi.fn().mockResolvedValueOnce(streams[0].stream)
       .mockResolvedValueOnce(streams[1].stream);
     const currentSessionIdRef = { current: null as string | null };
     const onSettled = vi.fn();
-    let pendingCreation: Promise<string | null> | undefined;
+    let pendingCreation: Promise<string | null> | undefined = firstExplicit
+      ? Promise.resolve('native-a') : undefined;
     let actions!: ReturnType<typeof useRunAgent>;
     function LegacyShell() {
       actions = useRunAgent({ ...config,
@@ -116,13 +122,13 @@ describe('submitted conversation ownership', () => {
 
     currentSessionIdRef.current = null;
     useSessionStore.getState().setCurrentSessionId(null);
-    if (explicitCreation) pendingCreation = Promise.resolve('native-b');
+    pendingCreation = secondExplicit ? Promise.resolve('native-b') : undefined;
     await actions.submitDraft('second conversation', []);
     await vi.waitFor(() => expect(runAgent).toHaveBeenCalledTimes(2));
     streams[1].close();
     await vi.waitFor(() => expect(onSettled).toHaveBeenCalledTimes(2));
     expect(runAgent.mock.calls.map(([body]) => body.SessionId)).toEqual(['native-a', 'native-b']);
-    expect(createSession).toHaveBeenCalledTimes(explicitCreation ? 1 : 2);
+    expect(createSession).toHaveBeenCalledTimes(Number(!firstExplicit) + Number(!secondExplicit));
   });
 
   it.each([true, false])('settles an approval wait without a retryable failure (approval=%s)', async approval => {

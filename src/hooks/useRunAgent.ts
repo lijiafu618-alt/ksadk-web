@@ -64,6 +64,16 @@ type RunOwner = {
 
 const MAX_IDLE_RUN_OWNERS = 64;
 
+function bindNativeOwner(owners: Map<string, RunOwner>, owner: RunOwner, sessionId: string) {
+  owner.sessionId = sessionId;
+  if (owner.conversationId) return;
+  const nativeKey = JSON.stringify([owner.agentId, sessionId]);
+  owners.set(nativeKey, owner);
+  // Retain the native run, but free its draft alias for a later conversation.
+  if (owner.key !== nativeKey && owners.get(owner.key) === owner) owners.delete(owner.key);
+  owner.key = nativeKey;
+}
+
 export function useRunAgent(ctx: RunAgentContext) {
   const ownersRef = useRef(new Map<string, RunOwner>());
   // Transient ownership distinguishes a live queue from restored pending intent.
@@ -256,7 +266,7 @@ export function useRunAgent(ctx: RunAgentContext) {
       }
       throw error;
     }
-    if (!owner.sessionId && pendingSessionId) owner.sessionId = pendingSessionId;
+    if (!owner.sessionId && pendingSessionId) bindNativeOwner(ownersRef.current, owner, pendingSessionId);
 
     let confirmDispatch: ((accepted: boolean) => void) | undefined;
     const dispatch = responsesInput !== undefined
@@ -289,21 +299,10 @@ export function useRunAgent(ctx: RunAgentContext) {
         onSessionCreated: sessionId => {
           const wasVisible = owner.isVisible();
           const previousKey = owner.sessionId || owner.conversationId;
-          owner.sessionId = sessionId;
+          bindNativeOwner(ownersRef.current, owner, sessionId);
           if (outboxEntry && ledger) ledger.update(outboxEntry.requestId, { nativeSessionId: sessionId });
           useStreamingStore.getState().setSessionStreaming(sessionId, true);
           if (previousKey !== sessionId) useStreamingStore.getState().setSessionStreaming(previousKey, false);
-          // Legacy shells acquire a native ID without changing the execution owner.
-          if (!owner.conversationId) {
-            const nativeKey = JSON.stringify([owner.agentId, sessionId]);
-            ownersRef.current.set(nativeKey, owner);
-            // A bound run keeps its native owner; the draft alias must be free
-            // for a subsequent conversation in shells without a controller.
-            if (owner.key !== nativeKey && ownersRef.current.get(owner.key) === owner) {
-              ownersRef.current.delete(owner.key);
-            }
-            owner.key = nativeKey;
-          }
           onSessionCreated?.(sessionId, owner.conversationId, owner.agentId);
           if (!onSessionCreated && wasVisible) {
             useSessionStore.getState().upsertSessions([{ SessionId: sessionId, UpdatedAt: new Date().toISOString() } as unknown as Session]);
