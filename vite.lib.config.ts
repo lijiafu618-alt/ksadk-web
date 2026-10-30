@@ -36,7 +36,9 @@ export default defineConfig({
       cssFileName: "styles",
     },
     rollupOptions: {
-      external: (id) => external.some((dependency) => id === dependency || id.startsWith(`${dependency}/`)),
+      // Inline JSON assets: external ESM JSON loses import attributes in the
+      // library output and cannot be imported by Node/SSR consumers.
+      external: (id) => !id.endsWith('.json') && external.some((dependency) => id === dependency || id.startsWith(`${dependency}/`)),
     },
   },
 })
