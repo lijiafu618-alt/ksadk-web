@@ -1,8 +1,10 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { injectBasicCatalogStyles } from '@a2ui/web_core/v0_9/basic_catalog';
-import { canonicalize } from 'json-canonicalize';
+import { a2uiSurfaceSnapshot as surfaceSnapshot } from '../../core/a2ui/snapshot.js';
 import { legacyQuestionSummary } from '../../core/run/a2ui.js';
 import { A2uiSurfaces } from '../../core/a2ui/surfaces.js';
+import { useA2uiCatalogRegistry } from '../../core/a2ui/provider.js';
+import { defaultA2uiCatalogRegistry, type A2uiCatalogRegistry } from '../../core/a2ui/registry.js';
 import type { A2UIClientEventMessage } from '../../core/a2ui/catalog.js';
 import { LegacyA2UISurface, legacyCatalogId } from './LegacyA2UISurface';
 import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
@@ -24,31 +26,51 @@ class SurfaceErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 }
 
 function OfficialSurface({ surfaceId, messages, onAction, disabled }: Props) {
+  const registry = useA2uiCatalogRegistry();
   const action = useRef(onAction);
   const controller = useRef<A2uiSurfaces | null>(null);
   const [surface, setSurface] = useState<ReturnType<A2uiSurfaces['get']>>();
   const [error, setError] = useState('');
+  const [ready, setReady] = useState(0);
+  const scopedMessages = useMemo(() => messages.filter(message => Object.values(message).some(
+    value => value && typeof value === 'object' && (value as { surfaceId?: string }).surfaceId === surfaceId,
+  )), [messages, surfaceId]);
+  const catalogKey = JSON.stringify([...new Set(scopedMessages.flatMap(message => {
+    const create = message.createSurface as { catalogId?: string } | undefined;
+    return create?.catalogId ? [create.catalogId] : [];
+  }))]);
 
   useEffect(() => { action.current = onAction; }, [onAction]);
   useEffect(() => {
-    const model = new A2uiSurfaces(message => action.current?.(message));
-    controller.current = model;
+    let cancelled = false;
+    let model: A2uiSurfaces | undefined;
+    const install = (renderers: Awaited<ReturnType<A2uiCatalogRegistry['loadRenderers']>>) => {
+      if (cancelled) return;
+      model = new A2uiSurfaces(message => action.current?.(message), registry, renderers);
+      controller.current = model;
+      setError('');
+      setReady(value => value + 1);
+    };
+    if (registry === defaultA2uiCatalogRegistry) install([]);
+    else void registry.loadRenderers(JSON.parse(catalogKey) as string[]).then(install).catch(cause => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : '卡片组件加载失败。');
+    });
     injectBasicCatalogStyles();
-    return () => { model.dispose(); controller.current = null; };
-  }, []);
+    return () => { cancelled = true; model?.dispose(); controller.current = null; };
+  }, [registry, catalogKey]);
   useEffect(() => {
     const model = controller.current;
     if (!model) return;
     model.enabled = !disabled && Boolean(onAction);
     try {
-      model.apply(messages);
+      model.apply(scopedMessages);
       setSurface(model.get(surfaceId));
       setError('');
     } catch (cause) {
       model.enabled = false;
       setError(cause instanceof Error ? cause.message : '卡片校验失败。');
     }
-  }, [messages, surfaceId, disabled, onAction]);
+  }, [scopedMessages, surfaceId, disabled, onAction, ready]);
 
   if (error) return <div role="alert" data-testid="a2ui-error">{error}</div>;
   if (!surface) return null;
@@ -72,47 +94,38 @@ type Props = {
   historyAnswer?: A2uiHistoryAnswer;
 };
 
-function surfaceSnapshot(surfaceId: string, messages: Props['messages']): string | undefined {
-  const model = new A2uiSurfaces(() => {});
-  try {
-    model.apply(structuredClone(messages));
-    const surface = model.get(surfaceId);
-    if (!surface) return undefined;
-    return canonicalize({
-      catalogId: surface.defaultCatalog.id,
-      rootId: surface.rootId,
-      theme: surface.theme,
-      metadata: surface.metadata,
-      components: [...surface.componentsModel.getAll().entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([, component]) => component.componentTree),
-      data: surface.dataModel.get('/'),
-    });
-  } catch {
-    // Unknown/incomplete snapshots stay visible; never hide an Agent update.
-    return undefined;
-  } finally { model.dispose(); }
-}
-
 export function A2UIActivityMessage(props: Props) {
+  const registry = useA2uiCatalogRegistry();
   const outcome = interactionInputOutcome(props.boundInteraction);
   const requestMessages = props.boundInteraction?.presentation?.a2ui?.messages;
   const unchangedPresentation = useMemo(() => {
     if ((!outcome && props.boundInteraction?.kind !== 'approval') || !requestMessages) return false;
-    const original = surfaceSnapshot(props.surfaceId, requestMessages);
-    return original !== undefined && original === surfaceSnapshot(props.surfaceId, props.messages);
-  }, [outcome, props.boundInteraction?.kind, requestMessages, props.surfaceId, props.messages]);
+    const original = surfaceSnapshot(props.surfaceId, requestMessages, registry);
+    return original !== undefined && original === surfaceSnapshot(props.surfaceId, props.messages, registry);
+  }, [outcome, props.boundInteraction?.kind, requestMessages, props.surfaceId, props.messages, registry]);
   const unchangedInput = Boolean(outcome && unchangedPresentation);
   const history = useMemo(() => {
     const accepted = props.boundInteraction && submittedResponse(props.boundInteraction);
     if (!unchangedInput || !accepted || !props.boundInteraction?.requestSchema) return undefined;
-    return projectA2uiHistoryResponse(props.surfaceId, props.messages,
-      props.boundInteraction.requestSchema, accepted.value);
-  }, [unchangedInput, props.surfaceId, props.messages, props.boundInteraction]);
+    const create = props.messages.flatMap(message => {
+      const detail = message.createSurface as { surfaceId?: string; catalogId?: string } | undefined;
+      return detail?.surfaceId === props.surfaceId && detail.catalogId ? [detail.catalogId] : [];
+    }).at(-1);
+    const entry = create ? registry.get(create) : undefined;
+    const projected = projectA2uiHistoryResponse(props.surfaceId, props.messages,
+      props.boundInteraction.requestSchema, accepted.value, entry?.inputComponents);
+    try {
+      if (entry?.historyAdapter) Object.assign(projected, entry.historyAdapter({
+        surfaceId: props.surfaceId, messages: structuredClone(props.messages), answer: projected.answer,
+      }));
+      if (projected.mapped) registry.validateMessages(projected.messages).dispose();
+    } catch { projected.mapped = false; }
+    return projected;
+  }, [unchangedInput, props.surfaceId, props.messages, props.boundInteraction, registry]);
   // Saved approval details live in the tray or terminal history anchor. Keep
   // old Activity-only previews and later Agent result updates independently.
   if (props.boundInteraction?.kind === 'approval'
-    && validatedApprovalA2ui(props.boundInteraction) && unchangedPresentation) return null;
+    && validatedApprovalA2ui(props.boundInteraction, registry) && unchangedPresentation) return null;
   if (props.boundInteraction && ['pending', 'resolving', 'failed'].includes(props.boundInteraction.status)) {
     return props.boundInteraction.kind === 'approval'
       ? <A2uiSnapshot {...props} disabled onAction={undefined} /> : null;

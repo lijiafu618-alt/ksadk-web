@@ -4,6 +4,7 @@ import { submittedResponse } from '../../core/interaction/response-snapshot.js';
 import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
 import { InteractionA2uiSurface } from './InteractionA2uiSurface';
 import { JsonSchemaInputSnapshot } from './JsonSchemaInputForm';
+import { useA2uiCatalogRegistry } from '../../core/a2ui/provider.js';
 
 function formatTime(value: string | null): string {
   if (!value) return '';
@@ -32,6 +33,7 @@ function requestSchemaKeys(
  * no inputs, nothing editable).
  */
 export function InteractionHistoryAnchor({ interaction }: { interaction: Interaction }) {
+  const registry = useA2uiCatalogRegistry();
   // A cancellation is already reflected by the stopped tool row. Keeping a
   // second full-width audit card here made feedback look like a failed or
   // still-actionable approval after refresh.
@@ -43,7 +45,7 @@ export function InteractionHistoryAnchor({ interaction }: { interaction: Interac
     || interaction.status === 'expired';
   const schemaKeys = requestSchemaKeys(interaction.requestSchema);
   const submitted = submittedResponse(interaction);
-  const approvalPreview = validatedApprovalA2ui(interaction);
+  const approvalPreview = validatedApprovalA2ui(interaction, registry);
 
   return (
     <div

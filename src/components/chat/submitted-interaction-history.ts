@@ -2,6 +2,8 @@ import { validatedApprovalA2ui } from '../../core/interaction/a2ui-validate.js';
 import type { Interaction } from '../../core/interaction/types.js';
 import { submittedResponse } from '../../core/interaction/response-snapshot.js';
 import type { Message } from './types.js';
+import { defaultA2uiCatalogRegistry, type A2uiCatalogRegistry } from '../../core/a2ui/registry.js';
+import { a2uiSurfaceSnapshot } from '../../core/a2ui/snapshot.js';
 
 export type MissingSubmittedInputHistory = {
   interaction: Interaction;
@@ -35,6 +37,7 @@ export function interactionForA2uiActivity(
 /** Attach unprojected metadata to its loaded run, independently of virtualization. */
 export function missingSubmittedInputHistory(
   messages: readonly Message[], interactions: readonly Interaction[] = [],
+  registry: A2uiCatalogRegistry = defaultA2uiCatalogRegistry,
 ): ReadonlyMap<string, MissingSubmittedInputHistory[]> {
   const anchors = new Set<string>();
   const surfaces = new Set<string>();
@@ -69,12 +72,26 @@ export function missingSubmittedInputHistory(
   const byMessage = new Map<string, MissingSubmittedInputHistory[]>();
   const seen = new Set<string>();
   for (const interaction of interactions) {
-    const approvalHistory = ['resolved', 'expired'].includes(interaction.status) && validatedApprovalA2ui(interaction);
+    const approvalHistory = ['resolved', 'expired'].includes(interaction.status) && validatedApprovalA2ui(interaction, registry);
     if (!interaction.runId || (!submittedResponse(interaction) && !approvalHistory) || seen.has(interaction.interactionId)) continue;
     seen.add(interaction.interactionId);
     const anchor = !anchors.has(interaction.interactionId);
-    const surfaceIds = approvalHistory ? [] : presentationSurfaces(interaction).filter(id => !surfaces.has(`${interaction.interactionId}\0${id}`)
-      && !runSurfaces.has(`${interaction.runId}\0${id}`));
+    const surfaceIds = approvalHistory ? [] : presentationSurfaces(interaction).filter(id => {
+      const represented = surfaces.has(`${interaction.interactionId}\0${id}`) || runSurfaces.has(`${interaction.runId}\0${id}`);
+      if (!represented) return true;
+      const original = a2uiSurfaceSnapshot(id, interaction.presentation!.a2ui!.messages, registry);
+      if (original === undefined) return false;
+      const snapshots = messages.flatMap(message => {
+        const sameRun = message.runId === interaction.runId || message.invocationId === interaction.runId;
+        return [...(message.aguiActivities || []), ...(message.aguiActivity ? [message.aguiActivity] : [])]
+          .filter(activity => activity.surfaceId === id && (activity.interactionId === interaction.interactionId
+            || !activity.interactionId && sameRun))
+          .map(activity => a2uiSurfaceSnapshot(id, activity.messages, registry));
+      });
+      // An updated result is not the original input history. Incomplete old
+      // activity records retain the conservative legacy duplicate guard.
+      return snapshots.length > 0 && snapshots.every(snapshot => snapshot !== undefined && snapshot !== original);
+    });
     if (!anchor && !surfaceIds.length) continue;
     const candidates = messages.filter(message => (message.runId === interaction.runId
       || message.invocationId === interaction.runId) && !message.agentBlock

@@ -2,6 +2,7 @@ import { createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ChatMessageList } from '../components/chat/ChatMessageList.js';
+import { A2UIActivityMessage } from '../components/chat/A2UIActivityMessage.js';
 import { interactionForA2uiActivity, missingSubmittedInputHistory } from '../components/chat/submitted-interaction-history.js';
 import { a2uiManifest } from '../core/a2ui/catalog.js';
 import { A2uiSurfaces } from '../core/a2ui/surfaces.js';
@@ -178,7 +179,13 @@ describe('same-run A2UI activity ownership', () => {
     const message = { ...row('final'), aguiActivities: [{ surfaceId: 'form', messages: result }] };
     const html = render([message], [presented]);
     expect(html).toContain('data-testid="a2ui-surface"');
-    expect(html).not.toContain('data-testid="a2ui-input-history"');
-    expect(missingSubmittedInputHistory([message], [presented]).get('final')?.[0]?.surfaceIds).toEqual([]);
+    // The result remains a standalone card; the original submitted form has
+    // its own read-only history after that surface's content changes.
+    expect(html.match(/data-testid="a2ui-input-history"/g)).toHaveLength(1);
+    expect(missingSubmittedInputHistory([message], [presented]).get('final')?.[0]?.surfaceIds).toEqual(['form']);
+    const resultHtml = renderToStaticMarkup(<A2UIActivityMessage surfaceId="form" messages={result}
+      boundInteraction={presented} />);
+    expect(resultHtml).not.toContain('data-testid="a2ui-input-history"');
+    expect(resultHtml).toContain('data-testid="a2ui-surface"');
   });
 });

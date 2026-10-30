@@ -83,6 +83,7 @@ export function legacyChoiceAnswer(answer: A2uiHistoryAnswer): ReturnType<A2uiHi
 
 export function projectA2uiHistoryResponse(
   surfaceId: string, messages: Operation[], schema: Schema, accepted: JsonValue,
+  additionalInputs: readonly string[] = [],
 ): { messages: Operation[]; answer: A2uiHistoryAnswer; mapped: boolean; legacy: boolean } {
   const answer = a2uiHistoryAnswer(schema, accepted);
   const components = componentsFor(surfaceId, messages);
@@ -135,7 +136,8 @@ export function projectA2uiHistoryResponse(
     }
   }
   const updates: Operation[] = [];
-  const inputs = components.filter(component => inputComponents.has(String(component.component)));
+  const inputs = components.filter(component => inputComponents.has(String(component.component))
+    || additionalInputs.includes(String(component.component)));
   if (!inputs.length) return { messages, answer, mapped: false, legacy: false };
   for (const component of inputs) {
     const path = pointer(component.value);

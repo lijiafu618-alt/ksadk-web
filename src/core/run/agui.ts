@@ -6,7 +6,8 @@ import {
 } from '@ag-ui/client';
 import type { BaseEvent, Interrupt } from '@ag-ui/core';
 import type { RunEvent } from './types.js';
-import { ksadkA2uiAgentContext, normalizeA2uiOperations } from './a2ui.js';
+import { a2uiAgentContext, normalizeA2uiOperations } from './a2ui.js';
+import { defaultA2uiCatalogRegistry, type A2uiCatalogRegistry } from '../a2ui/registry.js';
 import { isTerminalInteraction, type Interaction } from '../interaction/types.js';
 
 type AguiRunStatus = 'completed' | 'interrupted' | 'failed' | 'cancelled';
@@ -24,6 +25,7 @@ type AguiRunClientOptions = {
   onEvent: (event: RunEvent) => void;
   fetch?: typeof fetch;
   forwardedProps?: Record<string, unknown>;
+  a2uiCatalogRegistry?: A2uiCatalogRegistry;
 };
 
 type TextSnapshot = { messageId: string; content: string };
@@ -83,6 +85,7 @@ export class AguiRunClient {
   private executionEpoch = 0;
   private readonly threadId: string;
   private forwardedProps: Record<string, unknown>;
+  private catalogRegistry: A2uiCatalogRegistry;
 
   constructor(options: AguiRunClientOptions) {
     this.agent = new HttpAgent({
@@ -94,9 +97,13 @@ export class AguiRunClient {
     this.onEvent = options.onEvent;
     this.threadId = options.threadId;
     this.forwardedProps = options.forwardedProps || {};
+    this.catalogRegistry = options.a2uiCatalogRegistry || defaultA2uiCatalogRegistry;
   }
 
-  configure(forwardedProps: Record<string, unknown>) { this.forwardedProps = forwardedProps; }
+  configure(forwardedProps: Record<string, unknown>, registry = defaultA2uiCatalogRegistry) {
+    this.forwardedProps = forwardedProps;
+    this.catalogRegistry = registry;
+  }
 
   /** Canonical submissions finish on the session stream, outside HttpAgent.resume(). */
   reconcileInteractions(interactions: readonly Interaction[]): void {
@@ -230,7 +237,7 @@ export class AguiRunClient {
     try {
       result = await this.agent.runAgent({
         runId: parameters.runId,
-        context: [ksadkA2uiAgentContext],
+        context: [a2uiAgentContext(this.catalogRegistry)],
         forwardedProps: { ...this.forwardedProps, injectA2UITool: true },
         resume: parameters.resume,
         abortController: parameters.abortController,

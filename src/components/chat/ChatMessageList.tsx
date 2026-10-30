@@ -1,3 +1,4 @@
+import { useA2uiCatalogRegistry } from '../../core/a2ui/provider.js';
 import type { AgentBlockActions } from '../../core/conversation/agent.js';
 import {
   useCallback,
@@ -1028,6 +1029,7 @@ export function ChatMessageList({
   void contextIndicator;
   void onStopGeneration;
   void onCancelRemote;
+  const catalogRegistry = useA2uiCatalogRegistry();
   const progressLabel = runProgressLabel({ isStreaming, activity, messages, interactions: interactionRecords });
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -1075,8 +1077,8 @@ export function ChatMessageList({
 
   const visibleItems = virtualWindow.visibleItems;
   const unprojectedInputHistory = useMemo(
-    () => missingSubmittedInputHistory(messages, interactionRecords),
-    [messages, interactionRecords],
+    () => missingSubmittedInputHistory(messages, interactionRecords, catalogRegistry),
+    [messages, interactionRecords, catalogRegistry],
   );
 
   useEffect(() => {

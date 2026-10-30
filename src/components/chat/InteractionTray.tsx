@@ -1,3 +1,4 @@
+import { useA2uiCatalogRegistry } from '../../core/a2ui/provider.js';
 import { jsonValue, type JsonValue } from '../../types/json-value.js';
 import { useState } from 'react';
 import {
@@ -135,6 +136,7 @@ export function InteractionTray({
   localCatalog,
   className,
 }: InteractionTrayProps) {
+  const registry = useA2uiCatalogRegistry();
   const [comment, setComment] = useState('');
   const [localError, setLocalError] = useState<{ id: string; message: string } | null>(null);
   const isImeComposing = useImeComposition();
@@ -145,11 +147,11 @@ export function InteractionTray({
   const expired = isExpired(active);
   const submitError = readSubmitError(active);
   const summary = approvalSummary(active);
-  const approvalPreview = validatedApprovalA2ui(active);
+  const approvalPreview = validatedApprovalA2ui(active, registry);
   const disabled = expired || active.status === 'resolving' || ['resolved', 'cancelled', 'expired'].includes(active.status);
   const presentationMode = validateA2uiPresentation(
     active.presentation?.a2ui,
-    localCatalog,
+    localCatalog || registry,
   );
   // The canonical JSON schema form is also the safe fallback whenever the
   // A2UI presentation cannot be validated: the schema comes from the

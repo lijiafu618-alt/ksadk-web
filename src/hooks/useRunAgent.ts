@@ -17,6 +17,7 @@ import type { PermissionMode, RuntimeExecutionMode, RunEngineConfig } from '../c
 import { HttpConversationClient, type OutboxStore } from '../core/conversation/index.js';
 import type { ConversationClient } from '../core/conversation/types.js';
 import type { ConversationId } from '../core/conversation/studio-controller.js';
+import { useA2uiCatalogRegistry } from '../core/a2ui/provider.js';
 
 type QueuedDraft = {
   text: string;
@@ -75,6 +76,7 @@ function bindNativeOwner(owners: Map<string, RunOwner>, owner: RunOwner, session
 }
 
 export function useRunAgent(ctx: RunAgentContext) {
+  const a2uiCatalogRegistry = useA2uiCatalogRegistry();
   const ownersRef = useRef(new Map<string, RunOwner>());
   // Transient ownership distinguishes a live queue from restored pending intent.
   const outboxRequestsRef = useRef(new Set<string>());
@@ -115,6 +117,7 @@ export function useRunAgent(ctx: RunAgentContext) {
   } = ctx;
 
   const config = useMemo<RunEngineConfig>(() => ({
+    a2uiCatalogRegistry,
     agentId, apiFormats, agentFramework, selectedModel, selectedModelMetadata,
     thinkingMode: uiCapabilities.Thinking ? thinkingMode : 'auto', permissionMode,
     runtimeCapabilityMatrix: uiCapabilities.RuntimeCapabilityMatrix,
@@ -126,7 +129,7 @@ export function useRunAgent(ctx: RunAgentContext) {
     kernelCommandEventsEnabled: uiCapabilities.KernelSessionEventsByCommand === true,
     presentationProfile: bootstrapPresentationProfile(uiCapabilities.ConversationSurface, agentBlockRendererCatalog),
     conversationClient: conversationClient || undefined,
-  }), [agentId, apiFormats, agentFramework, selectedModel, selectedModelMetadata, thinkingMode, permissionMode, uiCapabilities, conversationClient]);
+  }), [agentId, apiFormats, agentFramework, selectedModel, selectedModelMetadata, thinkingMode, permissionMode, uiCapabilities, conversationClient, a2uiCatalogRegistry]);
 
   const getOwner = useCallback((sessionId: string | null | undefined = currentSessionIdRef.current): RunOwner => {
     const conversationId = ctx.conversationIdRef?.current;

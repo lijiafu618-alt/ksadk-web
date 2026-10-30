@@ -90,6 +90,7 @@ export type RunEvent =
     };
 
 export type RunEngineConfig = {
+  a2uiCatalogRegistry?: import('../a2ui/registry.js').A2uiCatalogRegistry;
   agentId: string;
   apiFormats: RuntimeApiFormat[];
   agentFramework: string;

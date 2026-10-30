@@ -10,7 +10,7 @@ import type {
   InteractionReceipt,
 } from '../core/interaction/types.js';
 import type { ApiFacade } from '../core/api/types.js';
-import { ksadkA2uiCatalog } from '../core/run/a2ui.js';
+import { useA2uiCatalogRegistry } from '../core/a2ui/provider.js';
 
 type UseInteractionsContext = {
   agentId: string;
@@ -39,6 +39,7 @@ type UseInteractionsContext = {
 };
 
 export function useInteractions(ctx: UseInteractionsContext) {
+  const registry = useA2uiCatalogRegistry();
   const [client] = useState(
     () =>
       new InteractionClientImpl({
@@ -115,6 +116,6 @@ export function useInteractions(ctx: UseInteractionsContext) {
     pending,
     records,
     respond,
-    localCatalog: ksadkA2uiCatalog,
+    localCatalog: registry,
   };
 }

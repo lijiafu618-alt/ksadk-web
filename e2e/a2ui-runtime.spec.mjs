@@ -48,8 +48,10 @@ async function startRuntime(project, kind, logFile, port = 0, overrides = {}) {
     '-p', `127.0.0.1:${publishedPort}:8080`, '-v', `${project}:/a2ui-project`,
     '-v', `${runtimeAppDir}:/a2ui-fixture:ro`, '-w', '/a2ui-fixture'];
   for (const key of ['KSADK_SESSION_BACKEND', 'AGENT_KERNEL_AUTHORITY_MODE',
+    'KSADK_LANGGRAPH_AUTO_CHECKPOINT',
     'KSADK_TEST_A2UI_PROJECT', 'KSADK_TEST_A2UI_WEB', 'KSADK_TEST_A2UI_AGENT',
-    'KSADK_TEST_A2UI_MCP', 'KSADK_TEST_A2UI_SUBGRAPH']) {
+    'KSADK_TEST_A2UI_MCP', 'KSADK_TEST_A2UI_SUBGRAPH',
+    'KSADK_TEST_A2UI_PRESENTATION', 'KSADK_TEST_A2UI_BAD_CATALOG']) {
     if (environment[key] !== undefined) dockerArgs.push('-e', `${key}=${environment[key]}`);
   }
   dockerArgs.push(dockerImage || '', 'python', '-m', 'uvicorn', 'a2ui_runtime_app:create_app',

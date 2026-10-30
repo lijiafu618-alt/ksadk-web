@@ -285,7 +285,7 @@ export class RunEngineImpl implements RunEngine {
       modelMetadata: this.config.selectedModelMetadata || undefined,
       modelOptions: buildModelOptionsFromThinkingMode(normalizeThinkingMode(this.config.thinkingMode)),
       toolApprovalMode: this.config.permissionMode || 'risk',
-    });
+    }, this.config.a2uiCatalogRegistry);
     return this.aguiClient;
   }
 
