@@ -166,16 +166,21 @@ export function A2UIActivityMessage(props: Props) {
 }
 
 function A2uiSnapshot(props: Props) {
+  const registry = useA2uiCatalogRegistry();
   const created = props.messages.flatMap(message => {
     const create = message.createSurface as { surfaceId?: string; catalogId?: string } | undefined;
     return create?.surfaceId === props.surfaceId ? [create] : [];
   }).at(-1);
   if (created?.catalogId === legacyCatalogId) {
-    const model = new A2uiSurfaces(() => {});
-    try { model.apply(structuredClone(props.messages)); } catch {
+    // Each mounted card owns one surface, including in mixed-catalog history.
+    // Schema validation does not need to load unrelated browser renderers.
+    const messages = props.messages.filter(message => Object.values(message).some(
+      value => value && typeof value === 'object' && (value as { surfaceId?: string }).surfaceId === props.surfaceId,
+    ));
+    try { registry.validateMessages(messages).dispose(); } catch {
       return <div role="alert">旧版卡片未通过兼容目录校验。</div>;
-    } finally { model.dispose(); }
-    return <LegacyA2UISurface {...props} disabled={Boolean(props.disabled || !props.onAction)} onAction={props.onAction || (() => {})} />;
+    }
+    return <LegacyA2UISurface {...props} messages={messages} disabled={Boolean(props.disabled || !props.onAction)} onAction={props.onAction || (() => {})} />;
   }
   return (
     <div className="mb-3 w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900" data-testid="a2ui-surface">

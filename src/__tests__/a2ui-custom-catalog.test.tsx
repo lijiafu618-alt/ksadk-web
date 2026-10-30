@@ -61,6 +61,44 @@ describe('application custom A2UI catalogs', () => {
     model.dispose();
   });
 
+  it('renders a legacy surface from mixed catalog messages without loading unrelated renderers', () => {
+    const load = vi.fn(async () => { throw new Error('Unrelated renderer must not load'); });
+    const registry = registration(load);
+    const legacy = [
+      { version: 'v0.9', createSurface: { surfaceId: 'legacy', catalogId: 'a2ui.org/catalogs/basic/v1.0' } },
+      { version: 'v0.9', updateComponents: { surfaceId: 'legacy', components: [
+        { id: 'root', component: 'Form', fields: [{ name: 'region', label: 'Legacy region', type: 'string' }] },
+      ] } },
+    ];
+    const combined = [...messages, ...legacy];
+    registry.validateMessages(combined).dispose();
+    const html = renderToStaticMarkup(<A2uiCatalogProvider registry={registry}>
+      <A2UIActivityMessage surfaceId="legacy" messages={combined} disabled />
+    </A2uiCatalogProvider>);
+    expect(html).toContain('Legacy region');
+    expect(html).toContain('legacy-a2ui-surface');
+    expect(html).toContain('<fieldset disabled=""');
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain('Feedback');
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it.each(['invalid-component', 'duplicate-create'])('still rejects an invalid legacy surface in mixed messages (%s)', fault => {
+    const legacyCreate = { version: 'v0.9', createSurface: {
+      surfaceId: 'legacy', catalogId: 'a2ui.org/catalogs/basic/v1.0',
+    } };
+    const invalid = fault === 'duplicate-create' ? legacyCreate : {
+      version: 'v0.9', updateComponents: { surfaceId: 'legacy', components: [
+        { id: 'root', component: 'UnsupportedLegacyComponent' },
+      ] },
+    };
+    const html = renderToStaticMarkup(<A2uiCatalogProvider registry={registration()}>
+      <A2UIActivityMessage surfaceId="legacy" messages={[...messages, legacyCreate, invalid]} disabled />
+    </A2uiCatalogProvider>);
+    expect(html).toContain('旧版卡片未通过兼容目录校验');
+    expect(html).not.toContain('<input');
+  });
+
   it('rejects conflicts, bad custom properties, missing refs and invalid batches atomically', () => {
     const registry = registration();
     const bad = structuredClone(messages);
