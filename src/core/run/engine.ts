@@ -1515,6 +1515,9 @@ export class RunEngineImpl implements RunEngine {
       case 'text_delta':
         this.emit({ type: 'text_delta', messageId, delta: action.text });
         break;
+      case 'text_replace':
+        this.emit({ type: 'text_replace', messageId, text: action.text });
+        break;
       case 'text_final':
         this.emit({ type: 'text_final', messageId, text: action.text });
         break;
