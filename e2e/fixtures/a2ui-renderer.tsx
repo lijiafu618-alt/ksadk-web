@@ -7,6 +7,8 @@ import { InteractionA2uiSurface } from '../../src/components/chat/InteractionA2u
 import { InteractionTray } from '../../src/components/chat/InteractionTray.js';
 import { a2uiCatalog, a2uiManifest } from '../../src/core/a2ui/catalog.js';
 import type { Interaction } from '../../src/core/interaction/types.js';
+import { A2uiCatalogProvider } from '../../src/core/a2ui/provider.js';
+import { customCatalogRegistry } from '../../examples/custom-catalog/registry.js';
 
 type Messages = Record<string, unknown>[];
 const root = createRoot(document.getElementById('root')!);
@@ -23,6 +25,13 @@ const probe = {
   legacy(messages: Messages, surfaceId = 's') {
     root.render(<LegacyA2UISurface surfaceId={surfaceId} messages={messages} disabled={false}
       onAction={action => { probe.actions.push(action); }} />);
+  },
+  mixedCatalogs(messages: Messages, disabled = false) {
+    root.render(<A2uiCatalogProvider registry={customCatalogRegistry}>
+      {['s', 'custom'].map(surfaceId => <A2UIActivityMessage key={surfaceId} surfaceId={surfaceId}
+        messages={messages} disabled={disabled}
+        onAction={disabled ? undefined : action => { probe.actions.push(action); }} />)}
+    </A2uiCatalogProvider>);
   },
   surfaces(messages: Messages) {
     root.render(<InteractionA2uiSurface a2ui={presentation(messages)} disabled={false}

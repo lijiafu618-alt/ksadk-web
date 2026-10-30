@@ -18,6 +18,33 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => Boolean(window.rendererProbe));
 });
 
+for (const disabled of [false, true]) {
+  test(`legacy and custom surfaces share messages with isolated controls (readonly=${disabled})`, async ({ page }) => {
+    const messages = [create(), components([form(['region'])]), data({ region: 'initial' }),
+      { version: 'v0.9.1', createSurface: { surfaceId: 'custom', catalogId: 'https://example.test/catalogs/forms/v1' } },
+      { version: 'v0.9.1', updateComponents: { surfaceId: 'custom', components: [
+        { id: 'root', component: 'Text', text: 'Custom catalog result' },
+      ] } },
+    ];
+    await page.evaluate(({ messages, disabled }) => window.rendererProbe.mixedCatalogs(messages, disabled), { messages, disabled });
+    await expect(page.getByText('Custom catalog result', { exact: true })).toBeVisible();
+    const legacy = page.getByTestId('legacy-a2ui-surface');
+    await expect(legacy.getByLabel('region', { exact: true })).toHaveValue('initial');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    if (disabled) {
+      await expect(legacy.getByLabel('region', { exact: true })).toBeDisabled();
+      await expect(legacy.getByRole('button', { name: '提交', exact: true })).toBeDisabled();
+      expect(await page.evaluate(() => window.rendererProbe.actions)).toEqual([]);
+    } else {
+      await legacy.getByLabel('region', { exact: true }).fill('submitted-region');
+      await legacy.getByRole('button', { name: '提交', exact: true }).click();
+      expect(await page.evaluate(() => window.rendererProbe.actions)).toMatchObject([
+        { userAction: { surfaceId: 's', context: { payload: { region: 'submitted-region' } } } },
+      ]);
+    }
+  });
+}
+
 test('approval keeps operation details visible and only the tray can approve', async ({ page }) => {
   await page.evaluate(messages => window.rendererProbe.approval(messages), [create(), components([
     { id: 'plan', component: 'Card', body: 'Example operation details' }, { id: 'bar', component: 'ApprovalBar' },
