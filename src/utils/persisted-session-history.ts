@@ -514,7 +514,7 @@ export function rebuildPersistedSessionHistory(
   }
 
   return {
-    messages: orderTranscript(applyLegacyTerminalReceipts(messages, orderedRecords, canonicalTerminalRunIds)),
+    messages: coalesceHistoryToolCalls(orderTranscript(applyLegacyTerminalReceipts(messages, orderedRecords, canonicalTerminalRunIds))),
     canonicalRunIds: [...completeCanonicalRunIds],
     translatedEvents,
   };

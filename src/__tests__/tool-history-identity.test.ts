@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { KernelRunEventTranslator } from '../core/stream/kernel-events.js';
 import { rebuildPersistedSessionHistory } from '../utils/persisted-session-history.js';
 import { mapBackendMessages } from '../utils/messages.js';
+import { mergeHistoryWithLive } from '../utils/transcript-order.js';
 import type { Message } from '../components/chat/types.js';
 import type { PersistedSessionEventRecord } from '../utils/persisted-session-history.js';
 import fixture from './fixtures/tool-history-two-rounds.json';
@@ -190,6 +191,9 @@ describe('tool call identity across cumulative and partial history', () => {
     const fallback: Message[] = [{
       id: 'compat-card', role: 'model', content: '', timestamp: 1, invocationId: 'run-1',
       aguiActivity: { surfaceId: 'display', messages: [] },
+      tools: { preview: { name: 'preview', callId: 'call-one', args: '', output: '0', status: 'completed' } },
+      blocks: [{ id: 'compat-tool', type: 'tool', toolName: 'preview', args: '', output: '0',
+        status: 'completed', extra: { callId: 'call-one' } }],
     }];
     const before = JSON.stringify(fallback);
     const output = rebuildPersistedSessionHistory(fallback, events, 'example-session');
@@ -198,5 +202,16 @@ describe('tool call identity across cumulative and partial history', () => {
     expect(output.messages.find(message => message.id === 'compat-card')?.aguiActivity?.surfaceId).toBe('display');
     expect(calls(output.messages).every(tool => tool.status === 'completed')).toBe(true);
     expect(JSON.stringify(fallback)).toBe(before);
+    const hydrated = mergeHistoryWithLive(output.messages, [], [...fallback, ...output.messages.filter(message => message.id !== 'compat-card')]);
+    expect(calls(hydrated)).toHaveLength(1);
+    expect(callBlocks(hydrated)).toHaveLength(1);
+    expect(calls(hydrated)).toMatchObject([{ status: 'completed', output: '0' }]);
+  });
+
+  it('uses an unknown legacy scope only when one native scope can own that call', () => {
+    const row = (id: string, scope?: string) => ({ MessageId: id, Role: 'assistant', InvocationId: 'run',
+      ...(scope ? { ScopeId: scope } : {}), ToolEvents: [{ Name: 'lookup', ToolCallId: 'call', Status: 'completed', Result: 0 }] });
+    expect(calls(mapBackendMessages([row('native', 'scope-a'), row('legacy')]) as Message[])).toHaveLength(1);
+    expect(calls(mapBackendMessages([row('native', 'scope-a'), row('other', 'scope-b'), row('legacy')]) as Message[])).toHaveLength(3);
   });
 });
