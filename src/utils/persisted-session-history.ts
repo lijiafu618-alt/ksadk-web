@@ -458,7 +458,6 @@ export function rebuildPersistedSessionHistory(
   for (const [runId, fallback] of fallbackByRun) {
     if (completeCanonicalRunIds.has(runId) || !canonicalRunIds.has(runId)) continue;
     const canonical = projected.filter((message) => message.invocationId === runId);
-    partialFallbackByRun.set(runId, enrichPartialCanonicalRun(fallback, canonical));
     // During an active run the compatibility endpoint can legitimately have
     // only the user row. Keep any streamed canonical assistant text visible
     // after refresh; once a legacy model row exists it remains the fallback
@@ -466,6 +465,11 @@ export function rebuildPersistedSessionHistory(
     const hasVisibleFallbackModel = fallback.some(
       (message) => message.role === 'model' && String(message.content || '').trim(),
     );
+    // An empty compatibility row may own a card, but not a second copy of
+    // the canonical tool facts rendered below. Enrich only the legacy text
+    // projection that actually replaces those canonical model rows.
+    partialFallbackByRun.set(runId, hasVisibleFallbackModel
+      ? enrichPartialCanonicalRun(fallback, canonical) : fallback);
     if (!hasVisibleFallbackModel) {
       partialCanonicalMessages.push(...canonical.map(withHistoryBlocks));
     }

@@ -169,4 +169,34 @@ describe('tool call identity across cumulative and partial history', () => {
     expect(JSON.stringify(fallback)).toBe(before);
     expect(calls(rebuildPersistedSessionHistory(output.messages, [event], 'example-session').messages)).toHaveLength(1);
   });
+
+  it('keeps one owner for tool facts when a compatibility card row has no assistant text', () => {
+    const frames = [
+      { event_type: 'run.started' },
+      { event_type: 'item.started', item_id: 'call', item_kind: 'tool_call' },
+      { event_type: 'item.completed', item_id: 'call', item_kind: 'tool_call',
+        snapshot: { parts: [{ content_type: 'tool_call', part_id: 'args', call_id: 'call-one', name: 'preview', arguments: { enabled: false } }] } },
+      { event_type: 'item.started', item_id: 'result', item_kind: 'tool_result' },
+      { event_type: 'item.completed', item_id: 'result', item_kind: 'tool_result',
+        snapshot: { parts: [{ content_type: 'tool_result', part_id: 'value', call_id: 'call-one', result: 0, is_error: false }] } },
+      { event_type: 'run.completed' },
+    ];
+    const events = frames.map((frame, index) => ({
+      SessionId: 'example-session', SeqId: index + 1, InvocationId: 'run-1', EventType: frame.event_type,
+      Content: { runtime_event: { schema_version: 2, family: 'runtime', run_id: 'run-1',
+        scope_id: 'root', event_id: `event-${index}`, seq: index + 1, timestamp: index + 1,
+        source: { framework: 'langgraph' }, ...frame } },
+    })) as PersistedSessionEventRecord[];
+    const fallback: Message[] = [{
+      id: 'compat-card', role: 'model', content: '', timestamp: 1, invocationId: 'run-1',
+      aguiActivity: { surfaceId: 'display', messages: [] },
+    }];
+    const before = JSON.stringify(fallback);
+    const output = rebuildPersistedSessionHistory(fallback, events, 'example-session');
+    expect(calls(output.messages)).toHaveLength(1);
+    expect(callBlocks(output.messages)).toHaveLength(1);
+    expect(output.messages.find(message => message.id === 'compat-card')?.aguiActivity?.surfaceId).toBe('display');
+    expect(calls(output.messages).every(tool => tool.status === 'completed')).toBe(true);
+    expect(JSON.stringify(fallback)).toBe(before);
+  });
 });
