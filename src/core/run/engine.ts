@@ -39,7 +39,7 @@ import type {
   ConversationSurfaceBootstrap,
 } from '../conversation/types.js';
 
-type StreamConsumeResult = { terminalStatus?: string; awaitingInput?: boolean };
+type StreamConsumeResult = { terminalStatus?: string; awaitingInput?: boolean; outcomeUnknown?: boolean };
 
 const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'error', 'cancelled', 'canceled', 'aborted', 'interrupted', 'resume_failed']);
 
@@ -519,6 +519,14 @@ export class RunEngineImpl implements RunEngine {
           this.setStage('completing');
           this.emit({ type: 'activity', phase: '等待人工确认', status: 'waiting', countEvent: false });
           this.emit({ type: 'stream_ended' });
+          return;
+        }
+
+        if (streamResult.outcomeUnknown) {
+          settlement = 'unknown';
+          this.setStage('recovering');
+          this.emit({ type: 'activity', phase: '运行状态待确认', status: 'waiting',
+            detail: '事件连接暂不可用，请查看原任务状态；不会自动重新执行。', countEvent: false });
           return;
         }
 
@@ -1297,6 +1305,7 @@ export class RunEngineImpl implements RunEngine {
     let consecutiveErrors = 0;
     const maxConsecutiveErrors = 6;
     let waitingForStream = false;
+    const pendingInteractions = new Set<string>();
 
     while (terminalStatus === undefined && consecutiveErrors < maxConsecutiveErrors) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -1343,6 +1352,11 @@ export class RunEngineImpl implements RunEngine {
                 onInvocationCreated?.(kernelRunId);
               }
               if (frameRunId && kernelRunId !== frameRunId) continue;
+              if (frame.family === 'interaction' && typeof frame.interaction_id === 'string') {
+                if (frame.event_type === 'interaction.requested') pendingInteractions.add(frame.interaction_id);
+                else if (['interaction.resolved', 'interaction.cancelled', 'interaction.expired']
+                  .includes(String(frame.event_type))) pendingInteractions.delete(frame.interaction_id);
+              }
               if (frame.schema_version === 2 && frame.family === 'runtime') {
                 const item = canonical.apply(frame);
                 if (item) {
@@ -1404,8 +1418,10 @@ export class RunEngineImpl implements RunEngine {
         await reader?.cancel().catch(() => {});
       }
     }
-    if (terminalStatus === undefined) terminalStatus = 'interrupted';
-    return { terminalStatus };
+    if (terminalStatus !== undefined) return { terminalStatus };
+    // Exhausting transport retries is not an authoritative run failure.
+    // A saved actionable wait proves delivery; otherwise retain uncertainty.
+    return pendingInteractions.size ? { awaitingInput: true } : { outcomeUnknown: true };
   }
 
   private async consumeStream(
